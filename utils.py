@@ -59,6 +59,20 @@ def _register_hook(layer: torch.nn.Module,
     hook = layer.register_forward_hook(hook_function)
     return hook
 
+    
+def get_layer_names(model_name: str, num_blocks: int) -> list:
+    model_name = model_name.lower()
+
+    if any(key in model_name for key in ["gpt2", "falcon"]):
+        prefix = "transformer.h"
+    elif any(key in model_name for key in ["llama", "gemma", "phi", "mistral", "qwen"]):
+        prefix = "model.layers"
+    else:
+        raise ValueError(f"Model type for '{model_name}' not supported!")
+
+    return [f"{prefix}.{i}" for i in range(num_blocks)]
+        
+
 def setup_hooks(model, layer_names):
     """ set up the hooks for recording internal neural activity from the model (aka layer activations) """
     hooks = []
