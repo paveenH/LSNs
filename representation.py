@@ -47,8 +47,3 @@ np.save(neg_file, neg_stack)
 
 print(f"Saved positive states to {pos_file} (shape {pos_stack.shape})")
 print(f"Saved negative states to {neg_file} (shape {neg_stack.shape})")
-
-np.save(neg_file, neg_stack)
-
-print(f"Saved positive states to {pos_file} (shape {pos_stack.shape})")
-print(f"Saved negative states to {neg_file} (shape {neg_stack.shape})")
