@@ -43,11 +43,6 @@ class LSNsModel:
         )
         self._ensure_padding_token()
         
-        # check GPU
-        device_map = infer_auto_device_map(self.model)
-        print(device_map)
-
-        
         # get number of layers and hidden size
         try:
             self.num_layers = len(self.model.model.layers)
@@ -74,6 +69,7 @@ class LSNsModel:
         input_ids = input_ids.to(self.model.device)
         attention_mask = attention_mask.to(self.model.device)
         
+
         layer_names = get_layer_names(self.model_path, self.num_layers)
         batch_activations = {ln: [] for ln in layer_names}
         hooks, layer_reps = setup_hooks(self.model, layer_names)
