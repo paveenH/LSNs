@@ -21,7 +21,7 @@ def main():
                         help="Batch size for DataLoader")
     parser.add_argument("--max-length", type=int, default=12,
                         help="Maximum token length for tokenizer")
-    parser.add_argument("--pooling", type=str, choices=["last", "mean", "sum"], default="last-token",
+    parser.add_argument("--pooling", type=str, choices=["last", "mean", "sum"], default="last",
                         help="Pooling strategy to apply to each layer's output")
     parser.add_argument("--output-dir", type=str, default="hidden",
                         help="Top-level directory to save output .npy files")
