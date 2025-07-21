@@ -75,28 +75,30 @@ class LSNsModel:
         hooks, layer_reps = setup_hooks(self.model, layer_names)
 
         last_token_idxs = attention_mask.sum(dim=1) - 1  # (B,)
-
         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
-        for i in range(input_ids.size(0)):  # batch size
-            for ln in layer_names:
-                reps = layer_reps[ln]  # shape: (B, T, H)
-                if pooling == "mean":
-                    act = reps[i].mean(dim=0).cpu()
-                elif pooling == "sum":
-                    act = reps[i].sum(dim=0).cpu()
-                elif pooling == "last":
-                    idx = last_token_idxs.unsqueeze(-1).expand(-1, reps.size(-1)) # (B, H)
-                    selected = reps.gather(1, idx.unsqueeze(1)).squeeze(1)  # (B, H)
-                else:
-                    raise ValueError(f"Unknown pooling method: {pooling}")
-                
-                batch_activations[ln].append(act)
+        for ln in layer_names:
+            reps = layer_reps[ln]  # shape: (B, T, H)
+
+            if pooling == "mean":
+                pooled = reps.mean(dim=1)  # (B, H)
+            elif pooling == "sum":
+                pooled = reps.sum(dim=1)   # (B, H)
+            elif pooling == "last":
+                # Gather last token for each sequence
+                idx = last_token_idxs.unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
+                pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
+            else:
+                raise ValueError(f"Unknown pooling method: {pooling}")
+
+            # Convert each row to separate tensor (List[Tensor])
+            batch_activations[ln] = [pooled[i].cpu() for i in range(pooled.size(0))]
 
         for hook in hooks:
             hook.remove()
 
         return batch_activations
+
 
 
     def extract_representations(
