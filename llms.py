@@ -1,15 +1,10 @@
 from typing import List, Dict
-
 import torch
 import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer
-
 from utils import setup_hooks, get_layer_names
-from datasets import LangLocDataset
-
-from accelerate import infer_auto_device_map
 
 class LSNsModel:
     def __init__(
@@ -97,11 +92,12 @@ class LSNsModel:
         max_length: int, 
         pooling: str,
         batch_size: int,
+        dataset
     ) -> Dict[str, Dict[str, np.ndarray]]:
         """
         Extract activations for positive/negative stimuli across specified layers.
         """
-        dataset = LangLocDataset()
+    
         loader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
         layer_names = get_layer_names(self.model_path, self.num_layers)
         hidden_dim = self.hidden_size
