@@ -73,10 +73,11 @@ class LSNsModel:
         input_ids = input_ids.to(self.model.device)
         attention_mask = attention_mask.to(self.model.device)
         
-
         layer_names = get_layer_names(self.model_path, self.num_layers)
         batch_activations = {ln: [] for ln in layer_names}
         hooks, layer_reps = setup_hooks(self.model, layer_names)
+        
+        last_token_idxs = attention_mask.sum(dim=1) - 1
         
         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
@@ -87,8 +88,10 @@ class LSNsModel:
                     act = reps.mean(dim=0).cpu()
                 elif pooling == "sum":
                     act = reps.sum(dim=0).cpu()
-                else:
-                    act = reps[-1].cpu()
+                else: # default:last token
+                    for i in range(reps.shape[0]):
+                        idx = last_token_idxs[i]
+                        act = reps[i, idx, :].cpu()
                 batch_activations[ln].append(act)
 
         for hook in hooks:
