@@ -17,8 +17,8 @@ def main():
     parser.add_argument("--size", type=str, required=True, help="Model identifier, e.g., 8B")
     args = parser.parse_args()
 
-    positive_path = os.path.join(args.input_dir, f"positive_{args.model_name}.npy")
-    negative_path = os.path.join(args.input_dir, f"negative_{args.model_name}.npy")
+    positive_path = os.path.join(args.input_dir, f"positive_{args.size}.npy")
+    negative_path = os.path.join(args.input_dir, f"negative_{args.size}.npy")
 
     # Load original hidden states
     positive_hidden = np.load(positive_path)  # shape: (240, 32, 4096)
