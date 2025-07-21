@@ -67,37 +67,34 @@ class LSNsModel:
         attention_mask: torch.Tensor,
         pooling: str = "last-token",
     ) -> Dict[str, List[torch.Tensor]]:
-        """
-        Run a forward pass and extract per-layer activations for a batch.
-        """
         input_ids = input_ids.to(self.model.device)
         attention_mask = attention_mask.to(self.model.device)
-        
+
         layer_names = get_layer_names(self.model_path, self.num_layers)
         batch_activations = {ln: [] for ln in layer_names}
         hooks, layer_reps = setup_hooks(self.model, layer_names)
-        
-        last_token_idxs = attention_mask.sum(dim=1) - 1
-        
+
+        last_token_idxs = attention_mask.sum(dim=1) - 1  # (B,)
+
         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
-        for idx in range(input_ids.size(0)):
+        for i in range(input_ids.size(0)):  # batch size
             for ln in layer_names:
-                reps = layer_reps[ln][idx]
+                reps = layer_reps[ln]  # shape: (B, T, H)
                 if pooling == "mean":
-                    act = reps.mean(dim=0).cpu()
+                    act = reps[i].mean(dim=0).cpu()
                 elif pooling == "sum":
-                    act = reps.sum(dim=0).cpu()
-                else: # default:last token
-                    for i in range(reps.shape[0]):
-                        idx = last_token_idxs[i]
-                        act = reps[i, idx, :].cpu()
+                    act = reps[i].sum(dim=0).cpu()
+                else:  # last-token
+                    idx = last_token_idxs[i]
+                    act = reps[i, idx, :].cpu()
                 batch_activations[ln].append(act)
 
         for hook in hooks:
             hook.remove()
 
         return batch_activations
+
 
     def extract_representations(
         self,
