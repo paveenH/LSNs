@@ -29,7 +29,7 @@ def main():
     args = parser.parse_args()
     
     # Construct full output path: e.g., hidden/Llama3
-    mode_name_save = f"{args.model_name}_{args.pooling}"
+    mode_name_save = f"{args.model_name}"
     full_output_dir = os.path.join(args.output_dir, mode_name_save)
     os.makedirs(full_output_dir, exist_ok=True)
 
@@ -50,8 +50,8 @@ def main():
     pos_stack = np.stack([reps["positive"][ln] for ln in layer_names], axis=1)
     neg_stack = np.stack([reps["negative"][ln] for ln in layer_names], axis=1)
 
-    pos_file = os.path.join(full_output_dir, f"positive_{args.model_size}.npy")
-    neg_file = os.path.join(full_output_dir, f"negative_{args.model_size}.npy")
+    pos_file = os.path.join(full_output_dir, f"positive_{args.model_size}_{args.pooling}.npy")
+    neg_file = os.path.join(full_output_dir, f"negative_{args.model_size}_{args.pooling}.npy")
     np.save(pos_file, pos_stack)
     np.save(neg_file, neg_stack)
 
