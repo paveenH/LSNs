@@ -50,7 +50,16 @@ class LSNsModel:
             self.tokenizer.add_special_tokens({"eos_token": "</s>"})
             self.model.resize_token_embeddings(len(self.tokenizer))
         self.tokenizer.pad_token = self.tokenizer.eos_token
-
+        
+    
+    def get_max_length(dataset, tokenizer):
+        """
+        Compute the maximum tokenized length for both positive and negative samples.
+        """
+        max_pos = max(len(tokenizer.encode(sent, truncation=False)) for sent in dataset.positive)
+        max_neg = max(len(tokenizer.encode(sent, truncation=False)) for sent in dataset.negative)
+        return max(max_pos, max_neg)
+    
     @torch.no_grad()
     def extract_batch(
         self,
@@ -89,7 +98,6 @@ class LSNsModel:
 
     def extract_representations(
         self,
-        max_length: int, 
         pooling: str,
         batch_size: int,
         dataset
@@ -101,6 +109,9 @@ class LSNsModel:
         loader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
         layer_names = get_layer_names(self.model_path, self.num_layers)
         hidden_dim = self.hidden_size
+        
+        max_length = self.get_max_length(dataset, self.tokenizer)
+        print(f"[INFO] Auto-detected max token length: {max_length}")
         
         self.model.eval()
         
