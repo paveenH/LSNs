@@ -71,10 +71,13 @@ class LSNsModel:
         """
         Run a forward pass and extract per-layer activations for a batch.
         """
+        input_ids = input_ids.to(self.model.device)
+        attention_mask = attention_mask.to(self.model.device)
+        
         layer_names = get_layer_names(self.model_path, self.num_layers)
         batch_activations = {ln: [] for ln in layer_names}
         hooks, layer_reps = setup_hooks(self.model, layer_names)
-
+        
         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
         for idx in range(input_ids.size(0)):
