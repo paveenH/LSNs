@@ -52,7 +52,7 @@ class LSNsModel:
         self.tokenizer.pad_token = self.tokenizer.eos_token
         
     
-    def get_max_length(dataset, tokenizer):
+    def get_max_length(self, dataset, tokenizer):
         """
         Compute the maximum tokenized length for both positive and negative samples.
         """
