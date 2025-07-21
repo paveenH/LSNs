@@ -52,12 +52,12 @@ class LSNsModel:
         self.tokenizer.pad_token = self.tokenizer.eos_token
         
     
-    def get_max_length(self, dataset, tokenizer):
+    def get_max_length(self, dataset):
         """
         Compute the maximum tokenized length for both positive and negative samples.
         """
-        max_pos = max(len(tokenizer.encode(sent, truncation=False)) for sent in dataset.positive)
-        max_neg = max(len(tokenizer.encode(sent, truncation=False)) for sent in dataset.negative)
+        max_pos = max(len(self.tokenizer.encode(sent, truncation=False)) for sent in dataset.positive)
+        max_neg = max(len(self.tokenizer.encode(sent, truncation=False)) for sent in dataset.negative)
         return max(max_pos, max_neg)
     
     @torch.no_grad()
@@ -65,7 +65,7 @@ class LSNsModel:
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
-        pooling: str = "last-token",
+        pooling: str = "last",
     ) -> Dict[str, List[torch.Tensor]]:
         input_ids = input_ids.to(self.model.device)
         attention_mask = attention_mask.to(self.model.device)
@@ -85,9 +85,12 @@ class LSNsModel:
                     act = reps[i].mean(dim=0).cpu()
                 elif pooling == "sum":
                     act = reps[i].sum(dim=0).cpu()
-                else:  # last-token
+                elif pooling == "last":
                     idx = last_token_idxs[i]
                     act = reps[i, idx, :].cpu()
+                else:
+                    raise ValueError(f"Unknown pooling method: {pooling}")
+                
                 batch_activations[ln].append(act)
 
         for hook in hooks:
@@ -110,7 +113,7 @@ class LSNsModel:
         layer_names = get_layer_names(self.model_path, self.num_layers)
         hidden_dim = self.hidden_size
         
-        max_length = self.get_max_length(dataset, self.tokenizer)
+        max_length = self.get_max_length(dataset)
         print(f"[INFO] Auto-detected max token length: {max_length}")
         
         self.model.eval()
