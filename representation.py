@@ -31,7 +31,7 @@ def main():
     args = parser.parse_args()
     
     dataset = LangLocDataset()
-    
+
     # Construct full output path: e.g., hidden/Llama3
     mode_name_save = f"{args.model_name}"
     full_output_dir = os.path.join(args.output_dir, mode_name_save)
@@ -42,7 +42,6 @@ def main():
 
     # Extract representations
     reps = model.extract_representations(
-        max_length=args.max_length,
         pooling=args.pooling,
         batch_size=args.batch_size,
         dataset=dataset
