@@ -21,7 +21,7 @@ def main():
                         help="Batch size for DataLoader")
     parser.add_argument("--max-length", type=int, default=12,
                         help="Maximum token length for tokenizer")
-    parser.add_argument("--pooling", type=str, choices=["last-token", "mean", "sum"], default="last-token",
+    parser.add_argument("--pooling", type=str, choices=["last", "mean", "sum"], default="last-token",
                         help="Pooling strategy to apply to each layer's output")
     parser.add_argument("--output-dir", type=str, default="hidden",
                         help="Top-level directory to save output .npy files")
@@ -29,7 +29,8 @@ def main():
     args = parser.parse_args()
     
     # Construct full output path: e.g., hidden/Llama3
-    full_output_dir = os.path.join(args.output_dir, args.model_name)
+    mode_name_save = f"{args.model_name}_{args.pooling}"
+    full_output_dir = os.path.join(args.output_dir, mode_name_save)
     os.makedirs(full_output_dir, exist_ok=True)
 
     # Initialize model wrapper
