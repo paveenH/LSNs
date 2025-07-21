@@ -9,6 +9,7 @@ from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer
 from utils import setup_hooks, get_layer_names
 from datasets import LangLocDataset
 
+from accelerate import infer_auto_device_map
 
 class LSNsModel:
     def __init__(
@@ -40,6 +41,11 @@ class LSNsModel:
             self.model_path,
             trust_remote_code=True,
         )
+        
+        # check GPU
+        device_map = infer_auto_device_map(self.model)
+        print(device_map)
+
         
         # get number of layers and hidden size
         try:
