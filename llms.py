@@ -41,6 +41,7 @@ class LSNsModel:
             self.model_path,
             trust_remote_code=True,
         )
+        self._ensure_padding_token()
         
         # check GPU
         device_map = infer_auto_device_map(self.model)
@@ -53,6 +54,12 @@ class LSNsModel:
         except AttributeError:
             self.num_layers = len(self.model.transformer.h)
         self.hidden_size = self.model.config.hidden_size
+    
+    def _ensure_padding_token(self) -> None:
+        if self.tokenizer.eos_token is None:
+            self.tokenizer.add_special_tokens({"eos_token": "</s>"})
+            self.model.resize_token_embeddings(len(self.tokenizer))
+        self.tokenizer.pad_token = self.tokenizer.eos_token
 
     @torch.no_grad()
     def extract_batch(
