@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description="Average hidden states across samples.")
     parser.add_argument("--input_dir", type=str, required=True, help="Path to directory containing positive_*.npy and negative_*.npy")
     parser.add_argument("--output_dir", type=str, required=True, help="Path to save the averaged files")
-    parser.add_argument("--model_name", type=str, required=True, help="Model identifier, e.g., 8B")
+    parser.add_argument("--size", type=str, required=True, help="Model identifier, e.g., 8B")
     args = parser.parse_args()
 
     positive_path = os.path.join(args.input_dir, f"positive_{args.model_name}.npy")
@@ -31,8 +31,8 @@ def main():
     # output
     os.makedirs(args.output_dir, exist_ok=True)
 
-    positive_out = os.path.join(args.output_dir, f"positive_{args.model_name}.npy")
-    negative_out = os.path.join(args.output_dir, f"negative_{args.model_name}.npy")
+    positive_out = os.path.join(args.output_dir, f"positive_{args.size}.npy")
+    negative_out = os.path.join(args.output_dir, f"negative_{args.size}.npy")
     np.save(positive_out, positive_mean)
     np.save(negative_out, negative_mean)
 
