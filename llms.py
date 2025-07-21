@@ -85,7 +85,6 @@ class LSNsModel:
         max_length: int, 
         pooling: str,
         batch_size: int,
-        device: torch.device,
     ) -> Dict[str, Dict[str, np.ndarray]]:
         """
         Extract activations for positive/negative stimuli across specified layers.
@@ -96,7 +95,7 @@ class LSNsModel:
         hidden_dim = self.hidden_size
         
         self.model.eval()
-        self.model.to(device)
+        self.model.to(self.model.device)
         
         reps = {
             "positive": {ln: np.zeros((len(dataset.positive), hidden_dim)) for ln in layer_names},
@@ -108,9 +107,9 @@ class LSNsModel:
             sents, nonwords = batch_data
             # tokenize
             pos = self.tokenizer(sents, truncation=True, padding=True,
-                                 max_length=max_length, return_tensors='pt').to(device)
+                                 max_length=max_length, return_tensors='pt').to(self.model.device)
             neg = self.tokenizer(nonwords, truncation=True, padding=True,
-                                 max_length=max_length, return_tensors='pt').to(device)
+                                 max_length=max_length, return_tensors='pt').to(self.model.device)
 
             batch_pos = self.extract_batch(pos.input_ids, pos.attention_mask, pooling)
             batch_neg = self.extract_batch(neg.input_ids, neg.attention_mask, pooling)
