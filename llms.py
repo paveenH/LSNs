@@ -86,8 +86,8 @@ class LSNsModel:
                 elif pooling == "sum":
                     act = reps[i].sum(dim=0).cpu()
                 elif pooling == "last":
-                    idx = last_token_idxs[i]
-                    act = reps[i, idx, :].cpu()
+                    idx = last_token_idxs.unsqueeze(-1).expand(-1, reps.size(-1)) # (B, H)
+                    selected = reps.gather(1, idx.unsqueeze(1)).squeeze(1)  # (B, H)
                 else:
                     raise ValueError(f"Unknown pooling method: {pooling}")
                 
