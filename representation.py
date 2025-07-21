@@ -21,8 +21,6 @@ def main():
                         help="Model name or path, e.g., 'mistralai/Mistral-7B-v0.3'")
     parser.add_argument("--batch-size", type=int, default=8,
                         help="Batch size for DataLoader")
-    parser.add_argument("--max-length", type=int, default=12,
-                        help="Maximum token length for tokenizer")
     parser.add_argument("--pooling", type=str, choices=["last", "mean", "sum"], default="last",
                         help="Pooling strategy to apply to each layer's output")
     parser.add_argument("--output-dir", type=str, default="hidden",
