@@ -24,9 +24,8 @@ model_name = os.path.basename(model_name)
 num_layers = get_num_blocks(model_name)  # 32
 hidden_dim = get_hidden_dim(model_name)  # 4096
 
-pooling = "last-token"  # for language, always last-token
-
 # ## Path 1 ##
+# pooling = "last-token"  # for language, always last-token
 # model_loc_path = (
 #     f"{model_name}_network={network}_pooling={pooling}_range=100-100_perc={percentage}_nunits=None_pretrained=True.npy"
 # )
