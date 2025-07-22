@@ -25,17 +25,21 @@ num_layers = get_num_blocks(model_name)      # 32
 hidden_dim = get_hidden_dim(model_name)      # 4096
 
 pooling = "last-token"  # for language, always last-token
+
+## Path 1 ##
 # model_loc_path = f"{model_name}_network={network}_pooling={pooling}_range=100-100_perc={percentage}_nunits=None_pretrained=True.npy"
 # lang_mask_path = os.path.join("cache", model_loc_path)
 
-model_name_short = os.path.basename(model_name).replace("Llama-3.1-", "").replace("-Instruct", "")  # "8B"
-range_str = "100-100"
-model_loc_path = f"mask_{model_name_short}_last_{percentage:.2f}_{range_str}.npy"
-lang_mask_path = os.path.join("representation_ttest", "llama3", model_loc_path)
+
+## Path 2 ##
+model_name = "llama3"
+size = "8B"
+model_loc_path = f"mask_{size}_{pooling}.npy"
+lang_mask_path = os.path.join("representation_ttest", model_name, model_loc_path)
+
 
 if not os.path.exists(lang_mask_path):
     raise ValueError(f"Path does not exist: {lang_mask_path}")
-
 # Read language_mask
 language_mask = np.load(lang_mask_path)  # shape: (32, 4096)
 
