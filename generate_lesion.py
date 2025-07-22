@@ -11,7 +11,7 @@ from models.modeling_gemma import GemmaForCausalLM
 from models.modeling_falcon import FalconForCausalLM
 from models.modeling_mistral import MistralForCausalLM
 
-CACHE_DIR = os.environ.get("LOC_CACHE", f"cache")
+CACHE_DIR = os.environ.get("LOC_CACHE", "cache")
 
 if __name__ == "__main__":
 
