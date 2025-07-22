@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 from scipy.stats import ttest_ind, false_discovery_control
 
+
 def is_topk(t_values: np.ndarray, k: int):
     """Return a 0/1 mask with the same shape as t_values, marking the top k units by absolute value (flattened)."""
     flat = np.abs(t_values).flatten()
@@ -11,19 +12,15 @@ def is_topk(t_values: np.ndarray, k: int):
     thresh = np.partition(flat, -k)[-k]
     return (np.abs(t_values) >= thresh).astype(int)
 
+
 def is_bottomk(t_values: np.ndarray, k: int):
     """Return a mask for the units with the smallest absolute k values."""
     flat = np.abs(t_values).flatten()
-    thresh = np.partition(flat, k-1)[k-1]
+    thresh = np.partition(flat, k - 1)[k - 1]
     return (np.abs(t_values) <= thresh).astype(int)
 
-def select_neurons(
-    positive: np.ndarray,
-    negative: np.ndarray,
-    percentage: float,
-    localize_range: str,
-    seed: int
-):
+
+def select_neurons(positive: np.ndarray, negative: np.ndarray, percentage: float, localize_range: str, seed: int):
     """
     positive, negative: shape (num_samples, num_layers, hidden_dim)
     percentage: e.g. 1.0 means top 1%
@@ -70,47 +67,32 @@ def select_neurons(
         raise ValueError(f"unsupported localize_range {localize_range}")
 
     return mask, adj_p
-    
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog="select_neurons.py",
-        description="Compute neuron mask and FDR-corrected p-values from positive/negative hidden states")
-    parser.add_argument("--input_dir",  required=True,
-                        help="Directory containing positive_<size>_<pooling>.npy and negative_<size>_<pooling>.npy")
-    parser.add_argument("--output_dir", required=True,
-                        help="Directory to save mask and p-values")
-    parser.add_argument("--size",       required=True,
-                        help="Model identifier, e.g., '8B'")
-    parser.add_argument("--pooling",    required=True, choices=["mean","last","sum"],
-                        help="Pooling strategy used during feature extraction")
-    parser.add_argument("--percentage", type=float, required=True,
-                        help="Percentage of units to select as top neurons (e.g., 1.0 for top 1%)")
-    parser.add_argument("--localize_range", default="100-100",
-                        help="Percentile range for unit selection: '100-100' means top units, '0-0' bottom units, '80-90' randomly in 80~90 percentile")
-    parser.add_argument("--seed",       type=int, default=42,
-                        help="Random seed for sampling units in percentile range")
+    parser = argparse.ArgumentParser(prog="select_neurons.py", description="Compute neuron mask and FDR-corrected p-values from positive/negative hidden states")
+    parser.add_argument("--input_dir", required=True, help="Directory containing positive_<size>_<pooling>.npy and negative_<size>_<pooling>.npy")
+    parser.add_argument("--output_dir", required=True, help="Directory to save mask and p-values")
+    parser.add_argument("--size", required=True, help="Model identifier, e.g., '8B'")
+    parser.add_argument("--pooling", required=True, choices=["mean", "last", "sum"], help="Pooling strategy used during feature extraction")
+    parser.add_argument("--percentage", type=float, required=True, help="Percentage of units to select as top neurons (e.g., 1.0 for top 1%)")
+    parser.add_argument("--localize_range", default="100-100", help="Percentile range for unit selection: '100-100' means top units, '0-0' bottom units, '80-90' randomly in 80~90 percentile")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for sampling units in percentile range")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
     # Load data
     pos_path = os.path.join(args.input_dir, f"positive_{args.size}_{args.pooling}.npy")
     neg_path = os.path.join(args.input_dir, f"negative_{args.size}_{args.pooling}.npy")
-    positive = np.load(pos_path)   # e.g. (240, 32, 4096)
+    positive = np.load(pos_path)  # e.g. (240, 32, 4096)
     negative = np.load(neg_path)
 
     # Compute mask and adjusted p-values
-    mask, adj_p = select_neurons(
-        positive, negative,
-        percentage=args.percentage,
-        localize_range=args.localize_range,
-        seed=args.seed
-    )
+    mask, adj_p = select_neurons(positive, negative, percentage=args.percentage, localize_range=args.localize_range, seed=args.seed)
 
     # Save results
-    mask_path = os.path.join(args.output_dir,
-                             f"mask_{args.size}_{args.pooling}.npy")
-    pval_path = os.path.join(args.output_dir,
-                             f"pvalues_{args.size}_{args.pooling}.npy")
+    mask_path = os.path.join(args.output_dir, f"mask_{args.size}_{args.pooling}.npy")
+    pval_path = os.path.join(args.output_dir, f"pvalues_{args.size}_{args.pooling}.npy")
 
     np.save(mask_path, mask)
     np.save(pval_path, adj_p)
