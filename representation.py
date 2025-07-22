@@ -20,7 +20,7 @@ def main():
     parser.add_argument(
         "--pooling",
         type=str,
-        choices=["last", "mean", "sum"],
+        choices=["last", "mean", "sum", "fix12"],
         default="last",
         help="Pooling strategy to apply to each layer's output",
     )
