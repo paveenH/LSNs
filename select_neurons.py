@@ -74,7 +74,7 @@ if __name__ == "__main__":
     parser.add_argument("--input_dir", required=True, help="Directory containing positive_<size>_<pooling>.npy and negative_<size>_<pooling>.npy")
     parser.add_argument("--output_dir", required=True, help="Directory to save mask and p-values")
     parser.add_argument("--size", required=True, help="Model identifier, e.g., '8B'")
-    parser.add_argument("--pooling", required=True, choices=["mean", "last", "sum"], help="Pooling strategy used during feature extraction")
+    parser.add_argument("--pooling", required=True, choices=["mean", "last", "sum", "fix12"], help="Pooling strategy used during feature extraction")
     parser.add_argument("--percentage", type=float, required=True, help="Percentage of units to select as top neurons (e.g., 1.0 for top 1%)")
     parser.add_argument("--localize_range", default="100-100", help="Percentile range for unit selection: '100-100' means top units, '0-0' bottom units, '80-90' randomly in 80~90 percentile")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for sampling units in percentile range")
