@@ -108,7 +108,7 @@ if __name__ == "__main__":
 
     # Save results
     mask_path = os.path.join(args.output_dir,
-                             f"mask_{args.size}_{args.pooling}_{args.percentage:.2f}_{args.localize_range}.npy")
+                             f"mask_{args.size}_{args.pooling}.npy")
     pval_path = os.path.join(args.output_dir,
                              f"pvalues_{args.size}_{args.pooling}.npy")
 
