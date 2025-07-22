@@ -20,8 +20,8 @@ hidden_dim = get_hidden_dim(model_name)
 print(f"Model: {model_name}")
 
 pooling = "mean" if network != "lang" else "last-token"
-model_loc_path = f"{model_name}_network={network}_pooling={pooling}_range=100-100_perc={percentage}_nunits=None_pretrained=True.npy"
-# model_loc_path = f"{model_name}_network={network}_pooling={pooling}_pretrained=True_pvalues.npy"
+# model_loc_path = f"{model_name}_network={network}_pooling={pooling}_range=100-100_perc={percentage}_nunits=None_pretrained=True.npy"
+model_loc_path = f"{model_name}_network={network}_pooling={pooling}_pretrained=True_pvalues.npy"
 
 cache_dir = "cache"
 lang_mask_path = f"{cache_dir}/{model_loc_path}"
