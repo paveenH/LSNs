@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 from model_utils import model_name_map, get_num_blocks, get_hidden_dim
 
-percentage = 0.5
+percentage = 1
 threshold = 0.05
 network = "language" #"theory-of-mind"
 model_name = "Llama-3.1-8B-Instruct"
@@ -20,8 +20,8 @@ hidden_dim = get_hidden_dim(model_name)
 print(f"Model: {model_name}")
 
 pooling = "mean" if network != "lang" else "last-token"
-# model_loc_path = f"{model_name}_network={network}_pooling={pooling}_range=100-100_perc={percentage}_nunits=None_pretrained=True.npy"
-model_loc_path = f"{model_name}_network={network}_pooling={pooling}_pretrained=True_pvalues.npy"
+model_loc_path = f"{model_name}_network={network}_pooling={pooling}_range=100-100_perc={percentage}_nunits=None_pretrained=True.npy"
+# model_loc_path = f"{model_name}_network={network}_pooling={pooling}_pretrained=True_pvalues.npy"
 
 cache_dir = "cache"
 lang_mask_path = f"{cache_dir}/{model_loc_path}"
