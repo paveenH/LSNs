@@ -10,17 +10,22 @@ import os
 import argparse
 import numpy as np
 
+
 def main():
     parser = argparse.ArgumentParser(description="Average hidden states across samples.")
-    parser.add_argument("--input_dir", type=str, required=True, help="Path to directory containing positive_*.npy and negative_*.npy")
+    parser.add_argument(
+        "--input_dir", type=str, required=True, help="Path to directory containing positive_*.npy and negative_*.npy"
+    )
     parser.add_argument("--output_dir", type=str, required=True, help="Path to save the averaged files")
-    parser.add_argument("--pooling", type=str, choices=["mean", "last", "sum"], required=True, help="Pooling strategy: mean, last, or sum")
+    parser.add_argument(
+        "--pooling", type=str, choices=["mean", "last", "sum"], required=True, help="Pooling strategy: mean, last, or sum"
+    )
     parser.add_argument("--size", type=str, required=True, help="Model identifier, e.g., 8B")
     args = parser.parse_args()
 
     positive_path = os.path.join(args.input_dir, f"positive_{args.size}_{args.pooling}.npy")
     negative_path = os.path.join(args.input_dir, f"negative_{args.size}_{args.pooling}.npy")
-    
+
     # Load original hidden states
     positive_hidden = np.load(positive_path)  # shape: (240, 32, 4096)
     negative_hidden = np.load(negative_path)
@@ -39,6 +44,7 @@ def main():
 
     print(f"> Saved mean positive to {positive_out} (shape {positive_mean.shape})")
     print(f"> Saved mean negative to {negative_out} (shape {negative_mean.shape})")
+
 
 if __name__ == "__main__":
     main()
