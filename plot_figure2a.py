@@ -31,9 +31,10 @@ pooling = "last-token"  # for language, always last-token
 # lang_mask_path = os.path.join("cache", model_loc_path)
 
 
-## Path 2 ##
+## Path 2 Test##
 model_name = "llama3"
 size = "8B"
+pooling = "mean"
 model_loc_path = f"mask_{size}_{pooling}.npy"
 lang_mask_path = os.path.join("representation_ttest", model_name, model_loc_path)
 
