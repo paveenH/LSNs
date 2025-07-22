@@ -214,13 +214,17 @@ if  __name__ == "__main__":
     network = args.network
     seed = args.seed
     batch_size = 1
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") if args.device is None else args.device
-
+    
     if pretrained:
-        model = transformers.AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16)
+        model = transformers.AutoModelForCausalLM.from_pretrained(model_name, 
+                                                                  torch_dtype=torch.float16,
+                                                                  device_map = "auto")
+        device = model.device
     else:
         model_config = transformers.AutoConfig.from_pretrained(model_name)
         model = transformers.AutoModelForCausalLM.from_config(config=model_config)
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") if args.device is None else args.device
+
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
