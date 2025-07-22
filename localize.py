@@ -217,7 +217,7 @@ if  __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") if args.device is None else args.device
 
     if pretrained:
-        model = transformers.AutoModelForCausalLM.from_pretrained(model_name)
+        model = transformers.AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16)
     else:
         model_config = transformers.AutoConfig.from_pretrained(model_name)
         model = transformers.AutoModelForCausalLM.from_config(config=model_config)
