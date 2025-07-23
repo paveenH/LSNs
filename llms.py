@@ -28,10 +28,7 @@ class LSNsModel:
                 device_map="auto",
             )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path,
-            trust_remote_code=True,
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
         self._ensure_padding_token()
 
         # get number of layers and hidden size
@@ -40,6 +37,8 @@ class LSNsModel:
         except AttributeError:
             self.num_layers = len(self.model.transformer.h)
         self.hidden_size = self.model.config.hidden_size
+        
+        self.layer_names = get_layer_names(self.model_path, self.num_layers)
 
     def _ensure_padding_token(self) -> None:
         if self.tokenizer.eos_token is None:
@@ -55,41 +54,72 @@ class LSNsModel:
         max_neg = max(len(self.tokenizer.encode(sent, truncation=False)) for sent in dataset.negative)
         return max(max_pos, max_neg)
 
+    # def extract_batch(
+    #     self,
+    #     input_ids: torch.Tensor,
+    #     attention_mask: torch.Tensor,
+    #     pooling: str = "last",
+    # ) -> Dict[str, List[torch.Tensor]]:
+    #     input_ids = input_ids.to(self.model.device)
+    #     attention_mask = attention_mask.to(self.model.device)
+
+    #     layer_names = get_layer_names(self.model_path, self.num_layers)
+    #     batch_activations = {ln: [] for ln in layer_names}
+    #     hooks, layer_reps = setup_hooks(self.model, layer_names)
+
+    #     # last_token_idxs = attention_mask.sum(dim=1) - 1  # (B,)
+    #     with torch.no_grad():
+    #         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
+
+    #     for ln in layer_names:
+    #         reps = layer_reps[ln]  # shape: (B, T, H)
+    #         if pooling == "mean":
+    #             pooled = reps.mean(dim=1)  # (B, H)
+    #         elif pooling == "sum":
+    #             pooled = reps.sum(dim=1)  # (B, H)
+    #         # elif pooling == "last":
+    #         #     last_token_idxs = attention_mask.sum(dim=1) - 1  # shape: (B,)
+    #         #     idx = last_token_idxs.to(reps.device).unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
+    #         #     pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
+    #         elif pooling == "last":
+    #             pooled = reps[:, -1, :]
+    #         else:
+    #             raise ValueError(f"Unknown pooling method: {pooling}")
+
+    #         # Convert each row to separate tensor (List[Tensor])
+    #         batch_activations[ln] = [pooled[i].cpu() for i in range(pooled.size(0))]
+
+    #     for hook in hooks:
+    #         hook.remove()
+
+    #     return batch_activations
+    
+    
     @torch.no_grad()
     def extract_batch(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
-        pooling: str = "last",
+        pooling: str = "last-token",
     ) -> Dict[str, List[torch.Tensor]]:
         input_ids = input_ids.to(self.model.device)
         attention_mask = attention_mask.to(self.model.device)
 
-        layer_names = get_layer_names(self.model_path, self.num_layers)
-        batch_activations = {ln: [] for ln in layer_names}
-        hooks, layer_reps = setup_hooks(self.model, layer_names)
+        hooks, layer_reps = setup_hooks(self.model, self.layer_names)
 
-        # last_token_idxs = attention_mask.sum(dim=1) - 1  # (B,)
-        
         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
-        for ln in layer_names:
-            reps = layer_reps[ln]  # shape: (B, T, H)
-            if pooling == "mean":
-                pooled = reps.mean(dim=1)  # (B, H)
-            elif pooling == "sum":
-                pooled = reps.sum(dim=1)  # (B, H)
-            # elif pooling == "last":
-            #     last_token_idxs = attention_mask.sum(dim=1) - 1  # shape: (B,)
-            #     idx = last_token_idxs.to(reps.device).unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
-            #     pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
-            elif pooling == "last":
-                pooled = reps[:, -1, :]
-            else:
-                raise ValueError(f"Unknown pooling method: {pooling}")
-
-            # Convert each row to separate tensor (List[Tensor])
-            batch_activations[ln] = [pooled[i].cpu() for i in range(pooled.size(0))]
+        batch_activations = {ln: [] for ln in self.layer_names}
+        for i in range(input_ids.size(0)):
+            for ln in self.layer_names:
+                reps = layer_reps[ln][i]  # (T, H)
+                if pooling == "mean":
+                    vec = reps.mean(dim=0)
+                elif pooling == "sum":
+                    vec = reps.sum(dim=0)
+                else:  # last-token
+                    vec = reps[-1]
+                batch_activations[ln].append(vec.cpu())
 
         for hook in hooks:
             hook.remove()
