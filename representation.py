@@ -47,6 +47,8 @@ layer_names = get_layer_names(args.model_path, model.num_layers)
 pos_stack = np.stack([reps["positive"][ln] for ln in layer_names], axis=1)
 neg_stack = np.stack([reps["negative"][ln] for ln in layer_names], axis=1)
 
+print("pos_stack.shape:", pos_stack.shape)
+
 pos_file = os.path.join(full_output_dir, f"positive_{args.model_size}_{args.pooling}.npy")
 neg_file = os.path.join(full_output_dir, f"negative_{args.model_size}_{args.pooling}.npy")
 np.save(pos_file, pos_stack)
