@@ -53,48 +53,7 @@ class LSNsModel:
         max_pos = max(len(self.tokenizer.encode(sent, truncation=False)) for sent in dataset.positive)
         max_neg = max(len(self.tokenizer.encode(sent, truncation=False)) for sent in dataset.negative)
         return max(max_pos, max_neg)
-
-    # def extract_batch(
-    #     self,
-    #     input_ids: torch.Tensor,
-    #     attention_mask: torch.Tensor,
-    #     pooling: str = "last",
-    # ) -> Dict[str, List[torch.Tensor]]:
-    #     input_ids = input_ids.to(self.model.device)
-    #     attention_mask = attention_mask.to(self.model.device)
-
-    #     layer_names = get_layer_names(self.model_path, self.num_layers)
-    #     batch_activations = {ln: [] for ln in layer_names}
-    #     hooks, layer_reps = setup_hooks(self.model, layer_names)
-
-    #     # last_token_idxs = attention_mask.sum(dim=1) - 1  # (B,)
-    #     with torch.no_grad():
-    #         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
-
-    #     for ln in layer_names:
-    #         reps = layer_reps[ln]  # shape: (B, T, H)
-    #         if pooling == "mean":
-    #             pooled = reps.mean(dim=1)  # (B, H)
-    #         elif pooling == "sum":
-    #             pooled = reps.sum(dim=1)  # (B, H)
-    #         # elif pooling == "last":
-    #         #     last_token_idxs = attention_mask.sum(dim=1) - 1  # shape: (B,)
-    #         #     idx = last_token_idxs.to(reps.device).unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
-    #         #     pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
-    #         elif pooling == "last":
-    #             pooled = reps[:, -1, :]
-    #         else:
-    #             raise ValueError(f"Unknown pooling method: {pooling}")
-
-    #         # Convert each row to separate tensor (List[Tensor])
-    #         batch_activations[ln] = [pooled[i].cpu() for i in range(pooled.size(0))]
-
-    #     for hook in hooks:
-    #         hook.remove()
-
-    #     return batch_activations
-    
-    
+            
     @torch.no_grad()
     def extract_batch(
         self,
@@ -102,6 +61,7 @@ class LSNsModel:
         attention_mask: torch.Tensor,
         pooling: str = "last-token",
     ) -> Dict[str, List[torch.Tensor]]:
+        
         input_ids = input_ids.to(self.model.device)
         attention_mask = attention_mask.to(self.model.device)
 
@@ -125,7 +85,8 @@ class LSNsModel:
             hook.remove()
 
         return batch_activations
-
+            
+    
     def extract_representations(self, pooling: str, batch_size: int, dataset) -> Dict[str, Dict[str, np.ndarray]]:
         """
         Extract activations for positive/negative stimuli across specified layers.
@@ -149,10 +110,7 @@ class LSNsModel:
         offset = 0
         for batch_data in tqdm(loader, desc="Extracting reps"):
             sents, nonwords = batch_data
-            # tokenize
-            # pos = self.tokenizer(sents, truncation=True, padding=True, max_length=max_length, return_tensors="pt")
-            # neg = self.tokenizer(nonwords, truncation=True, padding=True, max_length=max_length, return_tensors="pt")
-            
+    
             pos = self.tokenizer(sents, truncation=True, max_length=max_length, return_tensors="pt")
             neg = self.tokenizer(nonwords, truncation=True, max_length=max_length, return_tensors="pt")
 
