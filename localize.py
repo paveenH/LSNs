@@ -119,8 +119,8 @@ def localize(model_id: str,
 
     range_start, range_end = map(int, localize_range.split("-"))
 
-    save_path = f"{CACHE_DIR}/orig/{model_id}_network={network}_pooling={pooling}_range={localize_range}_perc={percentage}_nunits={num_units}_pretrained={pretrained}.npy"
-    save_path_pvalues = f"{CACHE_DIR}/orig/{model_id}_network={network}_pooling={pooling}_pretrained={pretrained}_pvalues.npy"
+    save_path = f"{CACHE_DIR}/ttest/{model_id}_network={network}_pooling={pooling}_range={localize_range}_perc={percentage}_nunits={num_units}_pretrained={pretrained}.npy"
+    save_path_pvalues = f"{CACHE_DIR}/ttest/{model_id}_network={network}_pooling={pooling}_pretrained={pretrained}_pvalues.npy"
 
     if os.path.exists(save_path) and not overwrite:
         print(f"> Loading mask from {save_path}")
