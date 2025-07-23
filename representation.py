@@ -19,7 +19,7 @@ parser.add_argument("--batch-size", type=int, default=8, help="Batch size for Da
 parser.add_argument(
     "--pooling",
     type=str,
-    choices=["last", "mean", "sum", "fix12"],
+    choices=["last", "mean", "sum"],
     default="last",
     help="Pooling strategy to apply to each layer's output",
 )
