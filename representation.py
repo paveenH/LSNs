@@ -19,9 +19,8 @@ parser.add_argument("--batch-size", type=int, default=8, help="Batch size for Da
 parser.add_argument(
     "--pooling",
     type=str,
-    choices=["last", "mean", "sum"],
     default="last",
-    help="Pooling strategy to apply to each layer's output",
+    help="Pooling strategy to apply to each layer's output, choices in [last, mean, sum, orig]"
 )
 parser.add_argument("--output-dir", type=str, default="hidden", help="Top-level directory to save output .npy files")
 
