@@ -15,7 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description="Average hidden states across samples.")
     parser.add_argument("--input_dir", type=str, required=True, help="Path to directory containing positive_*.npy and negative_*.npy")
     parser.add_argument("--output_dir", type=str, required=True, help="Path to save the averaged files")
-    parser.add_argument("--pooling", type=str, choices=["mean", "last", "sum", "fix12"], required=True, help="Pooling strategy: mean, last, or sum")
+    parser.add_argument("--pooling", type=str, choices=["mean", "last", "sum", "orig"], required=True, help="Pooling strategy: mean, last, or sum")
     parser.add_argument("--size", type=str, required=True, help="Model identifier, e.g., 8B")
     args = parser.parse_args()
 
