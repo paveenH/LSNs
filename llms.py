@@ -83,8 +83,6 @@ class LSNsModel:
                 # Gather last token for each sequence
                 idx = last_token_idxs.unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
                 pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
-            elif pooling == "fix12": # To reproduce result in paper
-                pooled = reps[:, 11, :]  # (B, H) 
             else:
                 raise ValueError(f"Unknown pooling method: {pooling}")
 
@@ -105,7 +103,8 @@ class LSNsModel:
         layer_names = get_layer_names(self.model_path, self.num_layers)
         hidden_dim = self.hidden_size
 
-        max_length = self.get_max_length(dataset)
+        # max_length = self.get_max_length(dataset)
+        max_length = 12
         print(f"[INFO] Auto-detected max token length: {max_length}")
 
         self.model.eval()
@@ -119,8 +118,11 @@ class LSNsModel:
         for batch_data in tqdm(loader, desc="Extracting reps"):
             sents, nonwords = batch_data
             # tokenize
-            pos = self.tokenizer(sents, truncation=True, padding=True, max_length=max_length, return_tensors="pt")
-            neg = self.tokenizer(nonwords, truncation=True, padding=True, max_length=max_length, return_tensors="pt")
+            # pos = self.tokenizer(sents, truncation=True, padding=True, max_length=max_length, return_tensors="pt")
+            # neg = self.tokenizer(nonwords, truncation=True, padding=True, max_length=max_length, return_tensors="pt")
+            
+            pos = self.tokenizer(sents, truncation=True, max_length=max_length, return_tensors="pt")
+            neg = self.tokenizer(nonwords, truncation=True, max_length=max_length, return_tensors="pt")
 
             batch_pos = self.extract_batch(pos.input_ids, pos.attention_mask, pooling)
             batch_neg = self.extract_batch(neg.input_ids, neg.attention_mask, pooling)
