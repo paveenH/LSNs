@@ -5,12 +5,15 @@ import numpy as np
 from scipy.stats import ttest_ind, false_discovery_control
 
 
-def is_topk(t_values: np.ndarray, k: int):
-    """Return a 0/1 mask with the same shape as t_values, marking the top k units by absolute value (flattened)."""
-    flat = np.abs(t_values).flatten()
-    # Find threshold: the k-th largest absolute t-value
-    thresh = np.partition(flat, -k)[-k]
-    return (np.abs(t_values) >= thresh).astype(int)
+# def is_topk(t_values: np.ndarray, k: int):
+#     """Return a 0/1 mask with the same shape as t_values, marking the top k units by absolute value (flattened)."""
+#     flat = np.abs(t_values).flatten()
+#     thresh = np.partition(flat, -k)[-k]
+#     return (np.abs(t_values) >= thresh).astype(int)
+
+def is_topk(a: np.ndarray, k: int):
+    _, rix = np.unique(-a, return_inverse=True)
+    return (rix < k).astype(int).reshape(a.shape)
 
 
 def is_bottomk(t_values: np.ndarray, k: int):
@@ -86,6 +89,9 @@ if __name__ == "__main__":
     neg_path = os.path.join(args.input_dir, f"negative_{args.size}_{args.pooling}.npy")
     positive = np.load(pos_path)  # e.g. (240, 32, 4096)
     negative = np.load(neg_path)
+    
+    print("positive.shape:", positive.shape)
+    print("negative.shape:", negative.shape)
 
     # Compute mask and adjusted p-values
     mask, adj_p = select_neurons(positive, negative, percentage=args.percentage, localize_range=args.localize_range, seed=args.seed)
