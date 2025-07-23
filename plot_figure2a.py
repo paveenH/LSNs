@@ -24,20 +24,12 @@ model_name = os.path.basename(model_name)
 num_layers = get_num_blocks(model_name)  # 32
 hidden_dim = get_hidden_dim(model_name)  # 4096
 
-# ## Path 1 ##
-# pooling = "last-token"  # for language, always last-token
-# model_loc_path = (
-#     f"{model_name}_network={network}_pooling={pooling}_range=100-100_perc={percentage}_nunits=None_pretrained=True.npy"
-# )
-# lang_mask_path = os.path.join("cache", model_loc_path)
-
-
-# Path 2 Plot From saved HS##
-model_name = "llama3"
-size = "8B"
-pooling = "fix12"
-model_loc_path = f"mask_{size}_{pooling}.npy"
-lang_mask_path = os.path.join("representation_ttest", model_name, model_loc_path)
+## Path 1 ##
+pooling = "last-token"  # for language, always last-token
+model_loc_path = (
+    f"{model_name}_network={network}_pooling={pooling}_range=100-100_perc={percentage}_nunits=None_pretrained=True.npy"
+)
+lang_mask_path = os.path.join("cache", model_loc_path)
 
 
 if not os.path.exists(lang_mask_path):
