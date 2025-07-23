@@ -69,21 +69,22 @@ class LSNsModel:
         batch_activations = {ln: [] for ln in layer_names}
         hooks, layer_reps = setup_hooks(self.model, layer_names)
 
-        last_token_idxs = attention_mask.sum(dim=1) - 1  # (B,)
+        # last_token_idxs = attention_mask.sum(dim=1) - 1  # (B,)
+        
         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
         for ln in layer_names:
             reps = layer_reps[ln]  # shape: (B, T, H)
-
             if pooling == "mean":
                 pooled = reps.mean(dim=1)  # (B, H)
             elif pooling == "sum":
                 pooled = reps.sum(dim=1)  # (B, H)
+            # elif pooling == "last":
+            #     last_token_idxs = attention_mask.sum(dim=1) - 1  # shape: (B,)
+            #     idx = last_token_idxs.to(reps.device).unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
+            #     pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
             elif pooling == "last":
-                # last_token_idxs = attention_mask.sum(dim=1) - 1  # shape: (B,)
-                # idx = last_token_idxs.to(reps.device).unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
-                # pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
-                pooled = reps[:, -1, :].contiguous()
+                pooled = reps[:, -1, :]
             else:
                 raise ValueError(f"Unknown pooling method: {pooling}")
 
