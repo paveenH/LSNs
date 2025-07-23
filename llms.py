@@ -80,10 +80,10 @@ class LSNsModel:
             elif pooling == "sum":
                 pooled = reps.sum(dim=1)  # (B, H)
             elif pooling == "last":
-                last_token_idxs = attention_mask.sum(dim=1) - 1  # shape: (B,)
-                idx = last_token_idxs.to(reps.device).unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
-                pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
-    
+                # last_token_idxs = attention_mask.sum(dim=1) - 1  # shape: (B,)
+                # idx = last_token_idxs.to(reps.device).unsqueeze(1).unsqueeze(2).expand(-1, 1, reps.size(-1))  # (B, 1, H)
+                # pooled = reps.gather(dim=1, index=idx).squeeze(1)  # (B, H)
+                pooled = reps[:, -1, :].contiguous()
             else:
                 raise ValueError(f"Unknown pooling method: {pooling}")
 
