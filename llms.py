@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer
-from utils import setup_hooks, get_layer_names
+from utils import setup_hooks, get_layer_names, lesion_hooks
 
 
 class LSNsModel:
@@ -15,23 +15,14 @@ class LSNsModel:
 
         if diffusion_mode == "dream":
             self.model = AutoModel.from_pretrained(
-                self.model_path,
-                trust_remote_code=True,
-                torch_dtype=torch.float16,
-                device_map="auto",
+                self.model_path, trust_remote_code=True, torch_dtype=torch.float16, device_map="auto"
             )
         else:
             self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_path,
-                trust_remote_code=True,
-                torch_dtype=torch.float16,
-                device_map="auto",
+                self.model_path, trust_remote_code=True, torch_dtype=torch.float16, device_map="auto"
             )
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.model_path,
-            trust_remote_code=True,
-        )
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
         self._ensure_padding_token()
 
         # get number of layers and hidden size
@@ -40,7 +31,7 @@ class LSNsModel:
         except AttributeError:
             self.num_layers = len(self.model.transformer.h)
         self.hidden_size = self.model.config.hidden_size
-        
+
         # get layer names
         self.layer_names = get_layer_names(self.model_path, self.num_layers)
 
@@ -110,7 +101,7 @@ class LSNsModel:
         print(f"[INFO] Auto-detected max token length: {max_length}")
 
         self.model.eval()
-        
+
         reps = {
             "positive": {ln: np.zeros((len(dataset.positive), hidden_dim)) for ln in self.layer_names},
             "negative": {ln: np.zeros((len(dataset.negative), hidden_dim)) for ln in self.layer_names},
@@ -133,3 +124,67 @@ class LSNsModel:
             offset += bsz
 
         return reps
+
+    @torch.no_grad()
+    def generate(
+        self,
+        inputs: list[str] | str,
+        max_new_tokens: int = 20,
+        temperature: float = 0.7,
+    ) -> list[str]:
+        """
+        Generate responses for a batch of input prompts.
+        """
+        if isinstance(inputs, str):
+            inputs = [inputs]
+        tokens = self.tokenizer(
+            inputs,
+            return_tensors="pt",
+            padding="longest",
+            truncation=True,
+        )
+        input_ids = tokens.input_ids.to(self.model.device)
+        attention_mask = tokens.attention_mask.to(self.model.device)
+
+        output_ids = self.model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=self.tokenizer.pad_token_id,
+        )
+
+        results = []
+        for i, ids in enumerate(output_ids):
+            text = self.tokenizer.decode(ids, skip_special_tokens=True)
+            results.append(text.strip())
+        return results
+
+    @torch.no_grad()
+    def generate_lesion(
+        self,
+        inputs: list[str] | str,
+        mask: np.ndarray,  # shape: (num_layers, hidden)
+        start: int = 1,  # 1-based
+        end: int = None,
+        max_new_tokens: int = 20,
+        temperature: float = 0.7,
+    ) -> list[str]:
+        """
+        Generate text while zeroing out (lesion) neurons per 'mask' for layers in [start, end).
+        """
+        if isinstance(inputs, str):
+            inputs = [inputs]
+        if end is None:
+            end = mask.shape[0]  # default to the last layer
+
+        hooks = lesion_hooks(self.model, self.layer_names, mask, start=start, end=end)
+
+        try:
+            results = self.generate(inputs=inputs, max_new_tokens=max_new_tokens, temperature=temperature)
+        finally:
+            for h in hooks:
+                h.remove()
+
+        return results

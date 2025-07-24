@@ -92,3 +92,44 @@ def setup_hooks(model, layer_names):
         hooks.append(hook)
 
     return hooks, layer_representations
+
+
+def lesion_hooks(
+        model,
+        layer_names,
+        mask,
+        start: int = 1,
+        end: int | None = None,
+    ):
+    
+    """
+    Register forward hooks to zero-out (lesion) neurons according to `mask`
+    for layers in [start, end) (1-based indices).
+    """
+    # Convert mask to tensor
+    if not isinstance(mask, torch.Tensor):
+        mask = torch.tensor(mask, dtype=torch.float32)
+    
+    device = next(model.parameters()).device
+    mask = mask.to(device)
+    num_layers, hidden = mask.shape
+    
+    # setup layer range; default 1, 33
+    if end is None or end > num_layers + 1:
+        end = num_layers + 1
+    start_idx = max(0, start - 1)
+    end_idx = min(num_layers, end - 1)
+
+    hooks = []
+    for idx in range(start_idx, end_idx):
+        name = layer_names[idx]
+        layer = _get_layer(model, name)
+        vec = mask[idx]
+        def make_hook(mask_vec: torch.Tensor):
+            def hook(module, inp, out):
+                # out shape: (batch, seq_len, hidden)
+                return out * mask_vec
+            return hook
+        hooks.append(layer.register_forward_hook(make_hook(vec)))
+
+    return hooks
