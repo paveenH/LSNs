@@ -64,7 +64,8 @@ if __name__ == "__main__":
     print(f"> Running with {network} mask")
 
     if network in ["language", "random"]:
-        mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
+        # mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
+        mask_path = "ttest/llama3/mask_8B_last.npy"
     else:
         mask_path = None
 
