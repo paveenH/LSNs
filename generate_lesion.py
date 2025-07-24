@@ -22,7 +22,7 @@ if __name__ == "__main__":
     argparser.add_argument("--network", type=str, default="language", choices=["language", "random", "none"])   
     argparser.add_argument("--device", type=str, default=None)
     argparser.add_argument("--seed", type=int, default=42)
-    argparser.add_argument("--pooling", type=str, default="last-token", choices=["last-token", "mean"])
+    argparser.add_argument("--pooling", type=str, default="last-token")
     argparser.add_argument("--localize-range", type=str, default="100-100")
 
     args = argparser.parse_args()
