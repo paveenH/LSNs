@@ -61,7 +61,8 @@ def compute_mean(args, pos, neg):
     print("compute_mean done:", pos_mean.shape)
     
 def nmd(args, pos, neg):
-    # pos, neg: (layers, hidden)
+    pos = pos.mean(axis=0)  # (layers, hidden)
+    neg = neg.mean(axis=0)
     diff = pos - neg
     nl, hd = diff.shape
     topk = hd // 200
