@@ -41,8 +41,7 @@ if __name__ == "__main__":
     if "gpt2" in model_name:
         model = GPT2LMHeadModel.from_pretrained(model_name)
     elif "Llama" in model_name:
-        model = LlamaForCausalLM.from_pretrained(
-            model_name, device_map="auto",torch_dtype=torch.float16, trust_remote_code=True) 
+        model = LlamaForCausalLM.from_pretrained(model_name, device_map="auto",torch_dtype=torch.float16) 
     elif "Phi" in model_name:
         model = Phi3ForCausalLM.from_pretrained(model_name)
     elif "gemma" in model_name:
