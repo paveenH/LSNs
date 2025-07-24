@@ -60,6 +60,23 @@ def compute_mean(args, pos, neg):
     np.save(os.path.join(args.output_dir, f"negative_{args.size}_{args.pooling}.npy"), neg_mean)
     print("compute_mean done:", pos_mean.shape)
     
+def nmd(args, pos, neg):
+    # pos, neg: (layers, hidden)
+    diff = pos - neg
+    nl, hd = diff.shape
+    # number of top neurons per layer (e.g., hidden_dim//200)
+    topk = hd // 200
+    start, end = map(int, args.layer_range.split('-'))
+    mask = np.zeros_like(diff, dtype=int)
+    for i in range(nl):
+        if start <= i < end:
+            # select topk by absolute diff
+            idxs = np.argsort(np.abs(diff[i]))[-topk:]
+            mask[i, idxs] = 1
+    # save mask
+    os.makedirs(args.output_dir, exist_ok=True)
+    np.save(os.path.join(args.output_dir, f"mask_{args.size}_{args.pooling}_nmd.npy"), mask)
+    print("nmd done:", mask.shape)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Detection utilities")
@@ -81,11 +98,18 @@ if __name__ == "__main__":
     mu.add_argument("--size", required=True)
     mu.add_argument("--pooling", required=True)
     mu.set_defaults(func=compute_mean)
+    # nmd
+    nn = sub.add_parser("nmd", help="Neuron-wise mean difference (NMD) mask generation")
+    nn.add_argument("--input_dir", required=True)
+    nn.add_argument("--output_dir", required=True)
+    nn.add_argument("--size", required=True)
+    nn.add_argument("--pooling", required=True)
+    nn.add_argument("--layer_range", default="0-32", help="Layer range [start-end)")
+    nn.set_defaults(func=nmd)
 
     args = parser.parse_args()
-    
+    # load pos/neg or average for select/mean/nmd
     pos = np.load(os.path.join(args.input_dir, f"positive_{args.size}_{args.pooling}.npy"))
     neg = np.load(os.path.join(args.input_dir, f"negative_{args.size}_{args.pooling}.npy"))
     
     args.func(args, pos, neg)
-   
