@@ -67,11 +67,8 @@ def nmd(args, pos, neg):
     nl, hd = diff.shape
     topk = hd // 200
     # args.layer_range is 1-based, convert to 0-based indices
-    start, end = map(int, args.layer_range.split('-'))
-    start_idx = max(0, start - 1)
-    end_idx = min(nl, end - 1)
     mask = np.zeros((nl, hd), dtype=int)
-    for i in range(start_idx, end_idx):
+    for i in range(nl):
         idxs = np.argsort(np.abs(diff[i]))[-topk:]
         mask[i, idxs] = 1
     os.makedirs(args.output_dir, exist_ok=True)
@@ -104,7 +101,6 @@ if __name__ == "__main__":
     nn.add_argument("--output_dir", required=True)
     nn.add_argument("--size", required=True)
     nn.add_argument("--pooling", required=True)
-    nn.add_argument("--layer_range", default="0-32", help="Layer range [start-end)")
     nn.set_defaults(func=nmd)
 
     args = parser.parse_args()
