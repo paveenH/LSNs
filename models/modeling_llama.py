@@ -51,7 +51,7 @@ from transformers.utils import (
 )
 from transformers.models.llama.configuration_llama import LlamaConfig
 
-from transformers.generation_utils import GenerationMixin
+from transformers.generation import GenerationMixin
 
 
 
