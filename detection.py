@@ -87,5 +87,5 @@ if __name__ == "__main__":
     pos = np.load(os.path.join(args.input_dir, f"positive_{args.size}_{args.pooling}.npy"))
     neg = np.load(os.path.join(args.input_dir, f"negative_{args.size}_{args.pooling}.npy"))
     
-    args.func(args)
+    args.func(args, pos, neg)
    
