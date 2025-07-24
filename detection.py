@@ -64,16 +64,15 @@ def nmd(args, pos, neg):
     # pos, neg: (layers, hidden)
     diff = pos - neg
     nl, hd = diff.shape
-    # number of top neurons per layer (e.g., hidden_dim//200)
     topk = hd // 200
+    # args.layer_range is 1-based, convert to 0-based indices
     start, end = map(int, args.layer_range.split('-'))
-    mask = np.zeros_like(diff, dtype=int)
-    for i in range(nl):
-        if start <= i < end:
-            # select topk by absolute diff
-            idxs = np.argsort(np.abs(diff[i]))[-topk:]
-            mask[i, idxs] = 1
-    # save mask
+    start_idx = max(0, start - 1)
+    end_idx = min(nl, end - 1)
+    mask = np.zeros((nl, hd), dtype=int)
+    for i in range(start_idx, end_idx):
+        idxs = np.argsort(np.abs(diff[i]))[-topk:]
+        mask[i, idxs] = 1
     os.makedirs(args.output_dir, exist_ok=True)
     np.save(os.path.join(args.output_dir, f"mask_{args.size}_{args.pooling}_nmd.npy"), mask)
     print("nmd done:", mask.shape)
