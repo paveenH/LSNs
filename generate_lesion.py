@@ -33,7 +33,7 @@ if __name__ == "__main__":
     model_name = args.model_name
     network = args.network
     prompt = args.prompt
-    # pooling = args.pooling
+    pooling = args.pooling
     # loc_range = args.localize_range
 
     print(f"> Running with model {model_name}")
@@ -63,11 +63,16 @@ if __name__ == "__main__":
 
     print(f"> Running with {network} mask")
 
-    if network in ["language", "random"]:
-        # mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
+    # if network in ["language", "random"]:
+    #     # mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
+    #     mask_path = "ttest/llama3/mask_8B_last.npy"
+    # else:
+    #     mask_path = None
+        
+    if pooling == "orig":
+        mask_path = "ttest/llama3/mask_8B_orig.npy"
+    elif pooling == "last":
         mask_path = "ttest/llama3/mask_8B_last.npy"
-    else:
-        mask_path = None
 
     if mask_path is not None:
         language_mask = np.load(f"{CACHE_DIR}/{mask_path}")
