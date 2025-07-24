@@ -28,13 +28,13 @@ if __name__ == "__main__":
     args = argparser.parse_args()
 
     seed = args.seed
-    percentage = args.percentage
+    # percentage = args.percentage
     device = args.device if args.device is not None else "cuda" if torch.cuda.is_available() else "cpu"
     model_name = args.model_name
     network = args.network
     prompt = args.prompt
-    pooling = args.pooling
-    loc_range = args.localize_range
+    # pooling = args.pooling
+    # loc_range = args.localize_range
 
     print(f"> Running with model {model_name}")
 
@@ -59,13 +59,13 @@ if __name__ == "__main__":
     model.eval()
     print(model)
 
-    model_name = os.path.basename(model_name)
+    # model_name = os.path.basename(model_name)
 
     print(f"> Running with {network} mask")
 
     if network in ["language", "random"]:
         # mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
-        mask_path = "ttest/llama3/mask_8B_last.npy"
+        mask_path = "ttest/llama3/mask_8B_orig.npy"
     else:
         mask_path = None
 
