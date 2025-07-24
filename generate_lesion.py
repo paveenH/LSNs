@@ -73,6 +73,8 @@ if __name__ == "__main__":
         mask_path = "ttest/llama3/mask_8B_orig.npy"
     elif pooling == "last":
         mask_path = "ttest/llama3/mask_8B_last.npy"
+    elif pooling == "nmd": 
+        mask_path = "nmd/llama3/mask_8B_last.npy"
 
     if mask_path is not None:
         language_mask = np.load(f"{CACHE_DIR}/{mask_path}")
