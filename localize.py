@@ -119,6 +119,9 @@ def localize(model_id: str,
 
     range_start, range_end = map(int, localize_range.split("-"))
 
+    # Ensure cache directory exists
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    
     save_path = f"{CACHE_DIR}/{model_id}_network={network}_pooling={pooling}_range={localize_range}_perc={percentage}_nunits={num_units}_pretrained={pretrained}.npy"
     save_path_pvalues = f"{CACHE_DIR}/{model_id}_network={network}_pooling={pooling}_pretrained={pretrained}_pvalues.npy"
 

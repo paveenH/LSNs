@@ -1,6 +1,7 @@
-numpy==1.23.5
+torch>=2.0.0
+transformers>=4.20.0
+numpy<2
 pandas
-torch
+scipy>=1.7.0
 tqdm
-scipy==1.14.1
-transformers==4.44.0
+pyyaml

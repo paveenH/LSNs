@@ -1,0 +1,29 @@
+# Example configuration file for LSNs experiments
+
+model:
+  name: "gpt2"
+  path: "gpt2"
+  device: null  # Will be auto-detected
+  torch_dtype: "float16"
+  device_map: "auto"
+  trust_remote_code: true
+
+data:
+  network_type: "language"
+  batch_size: 8
+  max_length: null  # Will be auto-detected
+  num_workers: 0
+
+analysis:
+  method: "ttest"
+  percentage: 5.0
+  localize_range: "100-100"
+  pooling: "last"
+  seed: 42
+  fdr_correction: true
+
+output_dir: "results"
+cache_dir: "cache"
+overwrite: false
+log_level: "INFO"
+save_logs: true 
