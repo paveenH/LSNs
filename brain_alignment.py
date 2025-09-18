@@ -145,6 +145,10 @@ class RealBrainData:
     def _load_brain_data(self) -> np.ndarray:
         import os
 
+        if self.brain_data_path.startswith("brainscore:"):
+            dataset_name = self.brain_data_path.split(":", 1)[1]
+            return self._load_brainscore_data(dataset_name)
+
         if not os.path.exists(self.brain_data_path):
             raise FileNotFoundError(f"Brain data file not found: {self.brain_data_path}")
 
@@ -171,7 +175,30 @@ class RealBrainData:
         else:
             raise ValueError(
                 f"Unsupported brain data format: {self.brain_data_path}. "
-                "Supported formats: .npy, .npz, .csv, .h5, .hdf5"
+                "Supported formats: .npy, .npz, .csv, .h5, .hdf5, brainscore:dataset_name"
+            )
+
+    def _load_brainscore_data(self, dataset_name: str) -> np.ndarray:
+        try:
+            import brainscore_language
+            from brainscore_language import load_dataset
+
+            self.logger.info(f"Loading {dataset_name} from brain-score...")
+            dataset = load_dataset(dataset_name)
+            brain_data = dataset.values
+            self.logger.info(f"Loaded brain-score dataset: {brain_data.shape}")
+            return brain_data
+
+        except ImportError:
+            raise ImportError(
+                "brain-score language not installed. Install with: "
+                "pip install git+https://github.com/brain-score/language.git"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to load {dataset_name}: {e}")
+            raise ValueError(
+                f"Could not load brain-score dataset {dataset_name}. "
+                f"Available datasets: Pereira2018, Tuckute2024. Error: {e}"
             )
 
     def get_brain_activations(
