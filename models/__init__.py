@@ -12,14 +12,18 @@ from .phi3_model import Phi3Model
 from .gemma_model import GemmaModel
 from .falcon_model import FalconModel
 from .mistral_model import MistralModel
+from .llada_model import LLaDAModel
+from .dream_model import DreamModel
 
 __all__ = [
     "BaseModel",
     "ModelFactory",
     "LlamaModel",
-    "GPT2Model", 
+    "GPT2Model",
     "Phi3Model",
     "GemmaModel",
     "FalconModel",
-    "MistralModel"
+    "MistralModel",
+    "LLaDAModel",
+    "DreamModel"
 ] 

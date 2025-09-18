@@ -15,6 +15,8 @@ from .phi3_model import Phi3Model
 from .gemma_model import GemmaModel
 from .falcon_model import FalconModel
 from .mistral_model import MistralModel
+from .llada_model import LLaDAModel
+from .dream_model import DreamModel
 
 from logger import get_logger
 
@@ -28,7 +30,9 @@ class ModelFactory:
         'phi3': Phi3Model,
         'gemma': GemmaModel,
         'falcon': FalconModel,
-        'mistral': MistralModel
+        'mistral': MistralModel,
+        'llada': LLaDAModel,
+        'dream': DreamModel
     }
     
     @classmethod
@@ -70,7 +74,13 @@ class ModelFactory:
         """
         model_path_lower = model_path.lower()
         
-        if 'llama' in model_path_lower:
+        # Check for diffusion models first (more specific patterns)
+        if 'llada' in model_path_lower:
+            return 'llada'
+        elif 'dream' in model_path_lower:
+            return 'dream'
+        # Check for base model types
+        elif 'llama' in model_path_lower:
             return 'llama'
         elif 'gpt2' in model_path_lower:
             return 'gpt2'
