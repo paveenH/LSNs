@@ -13,7 +13,7 @@ from datasets import LangLocDataset, TOMLocDataset, MDLocDataset
 from analysis.ttest_analyzer import TTestAnalyzer
 from analysis.nmd_analyzer import NMDAnalyzer
 from analysis.mean_analyzer import MeanAnalyzer
-from brain_alignment import BrainAlignmentMetrics, MockBrainData
+from brain_alignment import BrainAlignmentMetrics, RealBrainData
 from logger import get_logger
 
 CACHE_DIR = os.environ.get("LOC_CACHE", "cache")
@@ -26,7 +26,7 @@ def extract_step_wise_brain_aligned_representations(
     hidden_dim: int,
     device: torch.device,
     num_denoising_steps: int = 10,
-    brain_data=None
+    brain_data_path: str = None
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], List[Dict[str, float]]]:
     logger = get_logger()
 
@@ -39,13 +39,15 @@ def extract_step_wise_brain_aligned_representations(
     else:
         raise ValueError(f"Unsupported network: {network}")
 
-    if brain_data is None:
-        logger.info("Creating mock brain data for testing...")
-        brain_data = MockBrainData(
-            n_stimuli=len(loc_dataset.positive) + len(loc_dataset.negative),
-            n_voxels=500,
-            seed=42
+    if not brain_data_path:
+        raise ValueError(
+            "Brain data path is required. Mock data is no longer supported. "
+            "Please provide --brain-data-path argument pointing to real fMRI data. "
+            "Supported formats: .npy, .npz, .csv, .h5, .hdf5"
         )
+
+    logger.info(f"Loading real brain data from {brain_data_path}...")
+    brain_data = RealBrainData(brain_data_path)
 
     brain_metrics = BrainAlignmentMetrics()
 
@@ -307,6 +309,9 @@ def main():
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument("--output-dir", type=str, default="results")
 
+    # Brain data arguments
+    parser.add_argument("--brain-data-path", type=str, required=True)
+
     args = parser.parse_args()
 
     logger = get_logger()
@@ -329,6 +334,8 @@ def main():
     logger.info(f"Model loaded: {model}")
 
     logger.info("Extracting step-wise representations with brain alignment...")
+    logger.info(f"Using real brain data from: {args.brain_data_path}")
+
     step_wise_data, brain_scores = extract_step_wise_brain_aligned_representations(
         network=args.network,
         pooling=args.pooling,
@@ -336,7 +343,8 @@ def main():
         layer_names=model.get_layer_names(),
         hidden_dim=model.hidden_size,
         device=torch.device(args.device),
-        num_denoising_steps=args.num_steps
+        num_denoising_steps=args.num_steps,
+        brain_data_path=args.brain_data_path
     )
 
     logger.info("Analyzing brain alignment trajectory...")
@@ -365,11 +373,19 @@ def main():
     best_rsa_step = trajectory_analysis['optimal_steps']['rsa']['step']
     best_rsa_score = trajectory_analysis['optimal_steps']['rsa']['score']
 
-    logger.info(f"🧠 BRAIN ALIGNMENT FINDINGS:")
-    logger.info(f"  📈 Best Pearson alignment: Step {best_pearson_step} (score: {best_pearson_score:.4f})")
-    logger.info(f"  🎯 Best RSA alignment: Step {best_rsa_step} (score: {best_rsa_score:.4f})")
-    logger.info(f"  💾 Results saved to: {args.output_dir}/")
-    logger.info("🎉 Ready for diffusion model brain alignment analysis!")
+    logger.info(f"BRAIN ALIGNMENT FINDINGS:")
+    logger.info(f"  Best Pearson alignment: Step {best_pearson_step} (score: {best_pearson_score:.4f})")
+    logger.info(f"  Best RSA alignment: Step {best_rsa_step} (score: {best_rsa_score:.4f})")
+    logger.info(f"  Results saved to: {args.output_dir}/")
+
+    if args.brain_data_path:
+        logger.info("Analysis completed with real brain data!")
+        logger.info("Results are scientifically meaningful for neuroscience research.")
+    else:
+        logger.warning("Analysis completed with MOCK brain data!")
+        logger.warning("For actual neuroscience research, provide real brain data with --brain-data-path")
+
+    logger.info("Ready for diffusion model brain alignment analysis!")
 
 if __name__ == "__main__":
     main()

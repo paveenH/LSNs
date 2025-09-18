@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 
 import numpy as np
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 from scipy.stats import pearsonr
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import spearmanr
@@ -27,7 +28,7 @@ class BrainAlignmentMetrics:
                 if np.std(model_resp) == 0 or np.std(brain_resp) == 0:
                     continue
 
-                corr, p_value = pearsonr(model_resp, brain_resp)
+                corr, _ = pearsonr(model_resp, brain_resp)
                 if not np.isnan(corr):
                     correlations.append(corr)
 
@@ -123,33 +124,55 @@ class BrainAlignmentMetrics:
 
         return metrics
 
-class MockBrainData:
+class RealBrainData:
 
-    def __init__(self, n_stimuli: int = 48, n_voxels: int = 1000, seed: int = 42):
-        np.random.seed(seed)
-        self.n_stimuli = n_stimuli
-        self.n_voxels = n_voxels
-
-        self.brain_activations = self._generate_mock_brain_data()
-
+    def __init__(self, brain_data_path: str):
         self.logger = get_logger()
-        self.logger.info(f"Mock brain data created: {n_stimuli} stimuli, {n_voxels} voxels")
 
-    def _generate_mock_brain_data(self) -> np.ndarray:
-        brain_data = np.random.normal(0, 1, (self.n_stimuli, self.n_voxels))
+        if not brain_data_path or brain_data_path == "mock":
+            raise ValueError(
+                "Mock brain data is no longer supported. "
+                "Please provide a real brain data path using --brain-data-path argument. "
+                "Supported formats: BIDS, HDF5, NPY, or CSV files with fMRI data."
+            )
 
-        language_signal = np.random.normal(0.5, 0.2, (self.n_stimuli // 2, self.n_voxels))
-        brain_data[:self.n_stimuli // 2] += language_signal
+        self.brain_data_path = brain_data_path
+        self.brain_activations = self._load_brain_data()
 
-        for i in range(0, self.n_voxels, 50):
-            end_idx = min(i + 10, self.n_voxels)
-            correlation_strength = np.random.uniform(0.3, 0.7)
-            base_signal = np.random.normal(0, 1, self.n_stimuli)
-            for j in range(i, end_idx):
-                if j < self.n_voxels:
-                    brain_data[:, j] += correlation_strength * base_signal
+        self.n_stimuli, self.n_voxels = self.brain_activations.shape
+        self.logger.info(f"Brain data loaded: {self.n_stimuli} stimuli, {self.n_voxels} voxels")
 
-        return brain_data
+    def _load_brain_data(self) -> np.ndarray:
+        import os
+
+        if not os.path.exists(self.brain_data_path):
+            raise FileNotFoundError(f"Brain data file not found: {self.brain_data_path}")
+
+        if self.brain_data_path.endswith('.npy'):
+            return np.load(self.brain_data_path)
+        elif self.brain_data_path.endswith('.npz'):
+            data = np.load(self.brain_data_path)
+            if 'brain_activations' in data:
+                return data['brain_activations']
+            else:
+                return data[list(data.keys())[0]]
+        elif self.brain_data_path.endswith('.csv'):
+            import pandas as pd
+            df = pd.read_csv(self.brain_data_path)
+            return df.values
+        elif self.brain_data_path.endswith('.h5') or self.brain_data_path.endswith('.hdf5'):
+            import h5py
+            with h5py.File(self.brain_data_path, 'r') as f:
+                if 'brain_data' in f:
+                    return f['brain_data'][:]
+                else:
+                    key = list(f.keys())[0]
+                    return f[key][:]
+        else:
+            raise ValueError(
+                f"Unsupported brain data format: {self.brain_data_path}. "
+                "Supported formats: .npy, .npz, .csv, .h5, .hdf5"
+            )
 
     def get_brain_activations(
         self,
@@ -159,47 +182,3 @@ class MockBrainData:
             return self.brain_activations
         else:
             return self.brain_activations[stimuli_indices]
-
-def test_brain_alignment_metrics():
-    logger = get_logger()
-
-    logger.info("Testing brain alignment metrics...")
-
-    n_stimuli = 48
-    n_model_units = 768
-    n_brain_voxels = 500
-
-    np.random.seed(42)
-    model_activations = np.random.normal(0, 1, (n_stimuli, n_model_units))
-
-    language_boost = np.random.normal(0.3, 0.1, (n_stimuli // 2, n_model_units))
-    model_activations[:n_stimuli // 2] += language_boost
-
-    brain_data = MockBrainData(n_stimuli, n_brain_voxels)
-    brain_activations = brain_data.get_brain_activations()
-
-    metrics = BrainAlignmentMetrics()
-
-    logger.info("Computing alignment metrics...")
-    alignment_scores = metrics.compute_all_metrics(
-        model_activations, brain_activations
-    )
-
-    logger.info("Brain alignment test results:")
-    for metric_name, score in alignment_scores.items():
-        logger.info(f"  {metric_name.upper()}: {score:.4f}")
-
-    logger.info("Testing with random data (no signal)...")
-    random_model = np.random.normal(0, 1, (n_stimuli, n_model_units))
-    random_brain = np.random.normal(0, 1, (n_stimuli, n_brain_voxels))
-
-    random_scores = metrics.compute_all_metrics(random_model, random_brain)
-
-    logger.info("Random data alignment (should be lower):")
-    for metric_name, score in random_scores.items():
-        logger.info(f"  {metric_name.upper()}: {score:.4f}")
-
-    return alignment_scores, random_scores
-
-if __name__ == "__main__":
-    test_brain_alignment_metrics()
