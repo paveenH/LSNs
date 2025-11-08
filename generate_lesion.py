@@ -1,20 +1,72 @@
 import os
+import sys
 import torch
 import argparse
 import numpy as np
-from transformers import AutoTokenizer
-
-from models.modeling_gpt2 import GPT2LMHeadModel
-from models.modeling_llama import LlamaForCausalLM
-from models.modeling_phi3 import Phi3ForCausalLM
-from models.modeling_gemma import GemmaForCausalLM
-from models.modeling_falcon import FalconForCausalLM
-from models.modeling_mistral import MistralForCausalLM
+from transformers import AutoTokenizer, GPT2LMHeadModel
+from collections import OrderedDict
 
 CACHE_DIR = os.environ.get("LOC_CACHE", f"cache")
 
-if __name__ == "__main__":
+class PaperCorrectMaskedGPT2(GPT2LMHeadModel):
+    """GPT2 model with language selective masking exactly as described in the paper."""
+    
+    def __init__(self, config):
+        super().__init__(config)
+        self.language_selective_mask = None
+        self.original_forwards = {}
+        self.hooks_registered = False
+    
+    def set_language_selective_mask(self, mask):
+        """Set the language selective mask.
+        
+        Args:
+            mask: Tensor of shape (num_layers, hidden_dim) where 0 = ablate, 1 = keep
+        """
+        self.language_selective_mask = mask
+        if mask is not None:
+            self._register_ablation_hooks()
+        else:
+            self._remove_ablation_hooks()
+    
+    def _register_ablation_hooks(self):
+        """Register hooks on transformer blocks to apply ablation at each layer output."""
+        if self.hooks_registered:
+            return
+            
+        def create_ablation_hook(layer_idx):
+            def ablation_hook(module, input, output):
+                if self.language_selective_mask is not None:
+                    # output is either a tensor or tuple with hidden states as first element
+                    hidden_states = output[0] if isinstance(output, tuple) else output
+                    # Apply layer-specific mask: mask shape (hidden_dim,), hidden_states shape (batch, seq, hidden)
+                    layer_mask = self.language_selective_mask[layer_idx]  # (hidden_dim,)
+                    masked_hidden = hidden_states * layer_mask.unsqueeze(0).unsqueeze(0)
+                    
+                    if isinstance(output, tuple):
+                        return (masked_hidden,) + output[1:]
+                    else:
+                        return masked_hidden
+                return output
+            return ablation_hook
+        
+        # Register hooks on each transformer block
+        self.ablation_hooks = []
+        for i, block in enumerate(self.transformer.h):
+            hook = block.register_forward_hook(create_ablation_hook(i))
+            self.ablation_hooks.append(hook)
+        
+        self.hooks_registered = True
+    
+    def _remove_ablation_hooks(self):
+        """Remove ablation hooks."""
+        if hasattr(self, 'ablation_hooks'):
+            for hook in self.ablation_hooks:
+                hook.remove()
+            self.ablation_hooks = []
+        self.hooks_registered = False
 
+if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--model-name", type=str, required=True)
     argparser.add_argument("--prompt", type=str, required=True)
@@ -38,26 +90,17 @@ if __name__ == "__main__":
 
     print(f"> Running with model {model_name}")
 
+    # Use paper-correct model implementation
     if "gpt2" in model_name:
-        model = GPT2LMHeadModel.from_pretrained(model_name)
-    elif "Llama" in model_name:
-        model = LlamaForCausalLM.from_pretrained(model_name)
-    elif "Phi" in model_name:
-        model = Phi3ForCausalLM.from_pretrained(model_name)
-    elif "gemma" in model_name:
-        model = GemmaForCausalLM.from_pretrained(model_name)
-    elif "falcon" in model_name:
-        model = FalconForCausalLM.from_pretrained(model_name)
-    elif "Mistral" in model_name:
-        model = MistralForCausalLM.from_pretrained(model_name)
+        model = PaperCorrectMaskedGPT2.from_pretrained(model_name)
     else:
-        raise ValueError(f"Model {model_name} not supported")
+        raise ValueError(f"Model {model_name} not supported in paper-correct version")
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.pad_token = tokenizer.eos_token
 
     model.to(device)
     model.eval()
-    print(model)
 
     model_name = os.path.basename(model_name)
 
@@ -83,20 +126,27 @@ if __name__ == "__main__":
             assert np.sum(lang_mask_rand) == num_active_units
             language_mask = lang_mask_rand.reshape((num_layers, hidden_dim))
 
-
-        model.set_language_selective_mask(torch.tensor(language_mask).to(device))
+        # PAPER CORRECT: Invert the mask so 0 = ablate, 1 = keep
+        inverted_mask = 1 - language_mask
+        model.set_language_selective_mask(torch.tensor(inverted_mask, dtype=torch.float32).to(device))
         print("Loaded language mask with", num_active_units, "units, with shape", language_mask.shape)
+        print("Mask inverted: 0 = ablate, 1 = keep")
+        print("Applying ablation at each transformer block output (paper methodology)")
     else:
         model.set_language_selective_mask(None)
 
     inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
+    # Set seed for reproducibility
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
     outputs = model.generate(
         **inputs,
-        max_length=20,
-        do_sample=True,
-        temperature=0.7,
+        max_new_tokens=10,
+        do_sample=False,
         num_return_sequences=1,
+        pad_token_id=tokenizer.eos_token_id
     )
 
     print(tokenizer.decode(outputs[0], skip_special_tokens=True))

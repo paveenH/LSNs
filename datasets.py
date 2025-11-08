@@ -45,8 +45,12 @@ class MDLocDataset(Dataset):
 
 class LangLocDataset(Dataset):
     def __init__(self):
-        dirpath = "stimuli/language"
+        import os
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        dirpath = os.path.join(base_dir, "stimuli/language")
         paths = glob(f"{dirpath}/*.csv")
+        if not paths:
+            raise FileNotFoundError(f"No CSV files found in {dirpath}. Directory contents: {os.listdir(dirpath) if os.path.exists(dirpath) else 'Directory does not exist'}")
         vocab = set()
 
         data = pd.read_csv(paths[0])
@@ -76,7 +80,9 @@ class LangLocDataset(Dataset):
 
 class TOMLocDataset(Dataset):
     def __init__(self):
-        dirpath = "stimuli/tom/tomloc"
+        import os
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        dirpath = os.path.join(base_dir, "stimuli/tom/tomloc")
         instruction = "In this experiment, you will read a series of sentences and then answer True/False questions about them. Press button 1 to answer 'true' and button 2 to answer 'false'."
         context_template = "{instruction}\nStory: {story}\nQuestion: {question}\nAnswer: {answer}"
         belief_stories = [read_story(f"{dirpath}/{idx}b_story.txt") for idx in range(1, 11)]

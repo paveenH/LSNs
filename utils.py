@@ -49,10 +49,7 @@ def _get_layer(module, layer_name: str) -> torch.nn.Module:
 def _register_hook(layer: torch.nn.Module,
                     key: str,
                     target_dict: dict):
-    # instantiate parameters to function defaults; otherwise they would change on next function call
     def hook_function(_layer: torch.nn.Module, _input, output: torch.Tensor, key=key):
-        # fix for when taking out only the hidden state, this is different from dropout because of residual state
-        # see:  https://github.com/huggingface/transformers/blob/c06d55564740ebdaaf866ffbbbabf8843b34df4b/src/transformers/models/gpt2/modeling_gpt2.py#L428
         output = output[0] if isinstance(output, (tuple, list)) else output
         target_dict[key] = output
 
@@ -60,7 +57,6 @@ def _register_hook(layer: torch.nn.Module,
     return hook
 
 def setup_hooks(model, layer_names):
-    """ set up the hooks for recording internal neural activity from the model (aka layer activations) """
     hooks = []
     layer_representations = OrderedDict()
 
