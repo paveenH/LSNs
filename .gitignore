@@ -113,3 +113,4 @@ dmypy.json
 *.zip
 *.tar.gz
 *.rar
+.DS_Store
