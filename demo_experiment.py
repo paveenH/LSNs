@@ -32,7 +32,6 @@ def extract_data(model_name="gpt2", network="language", pooling="last-token", ba
     layer_names = get_layer_names(model_name)
     hidden_dim = get_hidden_dim(model_name)
     
-    # TODO: locate the real last token instead of 12th token
     # Run localization data extraction (LangLocDataset etc.)
     activations = extract_representations(
         network=network,
