@@ -9,6 +9,7 @@ but now uses real hidden activations obtained directly from the model,
 through the standardized ModelFactory wrapper (same API as in brain_alignment.py).
 """
 
+import os
 import torch
 import numpy as np
 from models.factory import ModelFactory
@@ -97,6 +98,10 @@ def run_both_analyses(positive, negative, layer_names):
 
     print(f"T-test selected: {ttest_mask.sum()} neurons ({ttest_meta['selection_ratio']:.3f})")
     print(f"NMD selected: {nmd_mask.sum()} neurons ({nmd_meta['selection_ratio']:.3f})")
+    
+    cache_dir = "cache"
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir, exist_ok=True)
 
     np.save("cache/real_ttest_mask.npy", ttest_mask)
     np.save("cache/real_nmd_mask.npy", nmd_mask)
