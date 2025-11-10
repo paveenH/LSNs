@@ -32,6 +32,7 @@ def extract_data(model_name="gpt2", network="language", pooling="last-token", ba
     layer_names = get_layer_names(model_name)
     hidden_dim = get_hidden_dim(model_name)
     
+    # TODO: locate the real last token instead of 12th token
     # Run localization data extraction (LangLocDataset etc.)
     activations = extract_representations(
         network=network,
@@ -57,7 +58,8 @@ def extract_data(model_name="gpt2", network="language", pooling="last-token", ba
 # ======================
 def run_both_analyses(positive, negative, layer_names):
     print("[2] Running analysis methods...")
-
+    
+    # TODO: Try the t-test with traditional process
     # T-test (global)
     ttest_analyzer = TTestAnalyzer({"percentage": 5.0, "localize_range": "100-100"})
     ttest_mask, ttest_meta = ttest_analyzer.analyze(positive, negative)
@@ -102,7 +104,8 @@ def compare_selection(results):
 # ======================
 def test_ablation(results, model_name="gpt2"):
     print("\n[4] Testing ablation effects...")
-
+    
+    # TODO: complete the hook for all models
     model = PaperCorrectMaskedGPT2.from_pretrained(model_name, torch_dtype=torch.float32)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
