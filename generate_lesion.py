@@ -81,12 +81,19 @@ if __name__ == "__main__":
     torch.manual_seed(seed)
     np.random.seed(seed)
 
+    # outputs = model.generate(
+    #     **inputs,
+    #     max_new_tokens=10,
+    #     do_sample=False,
+    #     num_return_sequences=1,
+    #     pad_token_id=tokenizer.eos_token_id
+    # )
+    
     outputs = model.generate(
-        **inputs,
+        prompt,
         max_new_tokens=10,
-        do_sample=False,
-        num_return_sequences=1,
-        pad_token_id=tokenizer.eos_token_id
+        do_sample=False
     )
 
     print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+    
