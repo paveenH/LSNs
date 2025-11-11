@@ -68,7 +68,6 @@ if __name__ == "__main__":
 
         # PAPER CORRECT: Invert the mask so 0 = ablate, 1 = keep
         inverted_mask = 1 - language_mask
-        # model.set_language_selective_mask(torch.tensor(inverted_mask, dtype=torch.float32).to(device))
         mask_dtype = next(model.model.parameters()).dtype
         model.set_language_selective_mask(torch.tensor(inverted_mask, dtype=mask_dtype).to(device))
 
@@ -90,7 +89,6 @@ if __name__ == "__main__":
         do_sample=False
     )
 
-    # print(tokenizer.decode(outputs[0], skip_special_tokens=True))
     print("\n=== Generated text ===")
     print(outputs)
 
