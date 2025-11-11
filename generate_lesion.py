@@ -68,7 +68,10 @@ if __name__ == "__main__":
 
         # PAPER CORRECT: Invert the mask so 0 = ablate, 1 = keep
         inverted_mask = 1 - language_mask
-        model.set_language_selective_mask(torch.tensor(inverted_mask, dtype=torch.float32).to(device))
+        # model.set_language_selective_mask(torch.tensor(inverted_mask, dtype=torch.float32).to(device))
+        mask_dtype = next(model.model.parameters()).dtype
+        model.set_language_selective_mask(torch.tensor(inverted_mask, dtype=mask_dtype).to(device))
+
         print("Loaded language mask with", num_active_units, "units, with shape", language_mask.shape)
         print("Mask inverted: 0 = ablate, 1 = keep")
         print("Applying ablation at each transformer block output (paper methodology)")
@@ -80,14 +83,6 @@ if __name__ == "__main__":
     # Set seed for reproducibility
     torch.manual_seed(seed)
     np.random.seed(seed)
-
-    # outputs = model.generate(
-    #     **inputs,
-    #     max_new_tokens=10,
-    #     do_sample=False,
-    #     num_return_sequences=1,
-    #     pad_token_id=tokenizer.eos_token_id
-    # )
     
     outputs = model.generate(
         prompt,
