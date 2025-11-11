@@ -90,5 +90,6 @@ if __name__ == "__main__":
         do_sample=False
     )
 
-    print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+    # print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+    print(outputs[0])
     
