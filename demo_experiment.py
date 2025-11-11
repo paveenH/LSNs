@@ -16,8 +16,6 @@ from models.factory import ModelFactory
 from datasets import LangLocDataset, TOMLocDataset, MDLocDataset
 from analysis.ttest_analyzer import TTestAnalyzer
 from analysis.nmd_analyzer import NMDAnalyzer
-from generate_lesion import PaperCorrectMaskedGPT2
-from transformers import AutoTokenizer
 
 
 # ======================================================
