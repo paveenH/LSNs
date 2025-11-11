@@ -33,6 +33,8 @@ class BaseModel(ABC):
         self._load_model()
         self._setup_tokenizer()
         self._get_model_info()
+        
+        self.language_selective_mask = None
     
     @abstractmethod
     def _load_model(self) -> None:
@@ -81,11 +83,12 @@ class BaseModel(ABC):
             return  # already registered
 
         def make_hook(layer_idx):
+            base_self = self  
             def hook_fn(module, inputs, outputs):
-                if self.language_selective_mask is None:
+                if base_self.language_selective_mask is None:
                     return outputs
                 hidden = outputs[0] if isinstance(outputs, tuple) else outputs
-                mask_vec = self.language_selective_mask[layer_idx]  # (hidden_dim,)
+                mask_vec = base_self.language_selective_mask[layer_idx]  # (hidden_dim,)
                 masked = hidden * mask_vec.unsqueeze(0).unsqueeze(0)
                 if isinstance(outputs, tuple):
                     return (masked,) + outputs[1:]
