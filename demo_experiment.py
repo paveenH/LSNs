@@ -181,7 +181,7 @@ def test_ablation(results, model_name="gpt2", device=None):
 # MAIN PIPELINE
 # ======================================================
 def main():
-    model_name = "phi3"
+    model_name = "microsoft/phi-3-mini-4k-instruct"
     network = "language"
     pooling = "last"
 
