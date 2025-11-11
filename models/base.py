@@ -66,11 +66,56 @@ class BaseModel(ABC):
         if hasattr(self.model, 'set_language_selective_mask'):
             self.model.set_language_selective_mask(mask)
             if mask is not None:
+                self._register_ablation_hooks()
                 self.logger.info(f"Language selective mask set with shape: {mask.shape}")
             else:
+                self._remove_ablation_hooks()
                 self.logger.info("Language selective mask cleared")
         else:
             self.logger.warning("Model does not support language selective mask")
+            
+    
+    def _register_ablation_hooks(self):
+        """Generic hook registration for transformer-based models."""
+        if hasattr(self, "_ablation_hooks") and self._ablation_hooks:
+            return  # already registered
+
+        def make_hook(layer_idx):
+            def hook_fn(module, inputs, outputs):
+                if self.language_selective_mask is None:
+                    return outputs
+                hidden = outputs[0] if isinstance(outputs, tuple) else outputs
+                mask_vec = self.language_selective_mask[layer_idx]  # (hidden_dim,)
+                masked = hidden * mask_vec.unsqueeze(0).unsqueeze(0)
+                if isinstance(outputs, tuple):
+                    return (masked,) + outputs[1:]
+                return masked
+            return hook_fn
+
+        # auto-detect transformer layers
+        if hasattr(self.model, "model") and hasattr(self.model.model, "layers"):
+            blocks = self.model.model.layers
+        elif hasattr(self.model, "transformer") and hasattr(self.model.transformer, "h"):
+            blocks = self.model.transformer.h
+        else:
+            self.logger.warning("No transformer blocks found for ablation.")
+            return
+
+        self._ablation_hooks = []
+        for i, block in enumerate(blocks):
+            h = block.register_forward_hook(make_hook(i))
+            self._ablation_hooks.append(h)
+
+        self.logger.info(f"Registered {len(self._ablation_hooks)} ablation hooks")
+
+    def _remove_ablation_hooks(self):
+        """Remove ablation hooks."""
+        if hasattr(self, "_ablation_hooks"):
+            for h in self._ablation_hooks:
+                h.remove()
+            self._ablation_hooks = []
+            self.logger.info("Removed ablation hooks")
+    
     
     @torch.no_grad()
     def extract_activations(
