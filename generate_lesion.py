@@ -38,7 +38,7 @@ if __name__ == "__main__":
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
-    model = ModelFactory.load(model_name=model_name, config={})
+    model = ModelFactory.create_model(model_name, config={})
     model.to_device(device)
     model.model.eval()  
 
