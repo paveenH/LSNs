@@ -132,43 +132,53 @@ def compare_selection(results):
 
 
 # ======================================================
-# STEP 4 — Optional: Test ablation using PaperCorrectMaskedGPT2
+# STEP 4 — Optional: Test ablation using BaseModel wrapper
 # ======================================================
-def test_ablation(results, model_name="gpt2"):
+def test_ablation(results, model_name="gpt2", device=None):
     """
-    Performs a quick qualitative ablation test using GPT-2 and the generated masks.
-    This uses the PaperCorrectMaskedGPT2 class with forward hooks.
+    Performs qualitative ablation tests using the unified BaseModel interface.
+    Automatically loads the model via ModelFactory and applies stored masks.
     """
-    print("\n[4] Testing ablation effects (GPT-2 only)...")
+    print("\n[4] Testing ablation effects via BaseModel...")
 
-    try:
-        model = PaperCorrectMaskedGPT2.from_pretrained(model_name, torch_dtype=torch.float32)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        tokenizer.pad_token = tokenizer.eos_token
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        prompt = "The quick brown fox"
-        inputs = tokenizer(prompt, return_tensors="pt")
+    # Load model through ModelFactory (BaseModel wrapper)
+    model = ModelFactory.create_model(model_name, config={})
+    model.to_device(device)
+    model.model.eval()
 
-        methods = {
-            "Baseline (no ablation)": None,
-            "T-test ablation": 1 - results["ttest_mask"],
-            "NMD ablation": 1 - results["nmd_mask"],
-        }
+    # Prepare tokenizer
+    # tokenizer = model.tokenizer
+    prompt = "The quick brown fox"
 
-        for name, mask in methods.items():
+    # Retrieve masks
+    ttest_mask = results.get("ttest_mask")
+    nmd_mask = results.get("nmd_mask")
+
+    # Define ablation conditions
+    methods = {
+        "Baseline (no ablation)": None,
+        "T-test ablation": 1 - ttest_mask if ttest_mask is not None else None,
+        "NMD ablation": 1 - nmd_mask if nmd_mask is not None else None,
+    }
+
+    for name, mask in methods.items():
+        print(f"\n--- {name} ---")
+        try:
             if mask is not None:
-                model.set_language_selective_mask(torch.tensor(mask, dtype=torch.float32))
+                mask_tensor = torch.tensor(
+                    mask, dtype=torch.float32, device=device
+                )
+                model.set_language_selective_mask(mask_tensor)
             else:
                 model.set_language_selective_mask(None)
 
-            outputs = model.generate(**inputs, max_new_tokens=10, do_sample=False)
-            text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            print(f"{name:<22}: {text}")
-
-    except Exception as e:
-        print(f"Ablation test skipped due to error: {e}")
-        import traceback
-        traceback.print_exc()
+            output_text = model.generate(prompt, max_new_tokens=15, do_sample=False)
+            print(output_text)
+        except Exception as e:
+            print(f"[!] Error during {name}: {e}")
 
 
 # ======================================================
