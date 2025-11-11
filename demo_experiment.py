@@ -14,7 +14,8 @@ import torch
 import numpy as np
 from models.factory import ModelFactory
 from datasets import LangLocDataset, TOMLocDataset, MDLocDataset
-from analysis.ttest_analyzer import TTestAnalyzer
+# from analysis.ttest_analyzer import TTestAnalyzer
+from analysis.ttest_signed_analyzer import TTestAnalyzer
 from analysis.nmd_analyzer import NMDAnalyzer
 
 
