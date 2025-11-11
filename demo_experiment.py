@@ -166,9 +166,7 @@ def test_ablation(results, model_name="gpt2", device=None):
         print(f"\n--- {name} ---")
         try:
             if mask is not None:
-                mask_tensor = torch.tensor(
-                    mask, dtype=torch.float32, device=device
-                )
+                mask_tensor = torch.tensor(mask, dtype=model.model.dtype, device=device)
                 model.set_language_selective_mask(mask_tensor)
             else:
                 model.set_language_selective_mask(None)
