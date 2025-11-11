@@ -46,7 +46,8 @@ if __name__ == "__main__":
 
 
     if network in ["language", "random"]:
-        mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
+        # mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
+        mask_path = "real_nmd_mask.npy"
     else:
         mask_path = None
 
