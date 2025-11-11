@@ -25,10 +25,12 @@ def extract_data(model_name="gpt2", network="language", pooling="last", batch_si
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     config = {
-        "device_map": device,
-        "torch_dtype": "float32",
+        "device_map": "auto",
+        "torch_dtype": torch.float16,
+        "low_cpu_mem_usage": True,
         "trust_remote_code": True,
     }
+    
     model = ModelFactory.create_model(model_name, config)
     layer_names = model.get_layer_names()
 
@@ -42,16 +44,26 @@ def extract_data(model_name="gpt2", network="language", pooling="last", batch_si
     else:
         raise ValueError(f"Unsupported network type: {network}")
 
+    # Extract per-layer activations for positive and negative stimuli
     pos_texts = [str(x) for x in dataset.positive]
     neg_texts = [str(x) for x in dataset.negative]
 
     print(f"Extracting {len(pos_texts)} positive and {len(neg_texts)} negative examples...")
 
-    pos_acts = model.extract_activations(pos_texts, layer_names, pooling)
-    neg_acts = model.extract_activations(neg_texts, layer_names, pooling)
+    # ---- New batched extraction to avoid OOM ----
+    def batched_extract(texts, batch_size=8):
+        all_batches = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i+batch_size]
+            acts = model.extract_activations(batch, layer_names, pooling)
+            batch_stack = np.stack([acts[layer] for layer in layer_names], axis=1)
+            all_batches.append(batch_stack)
+            torch.cuda.empty_cache()  # 释放中间缓存
+        return np.concatenate(all_batches, axis=0)
 
-    positive = np.stack([pos_acts[layer] for layer in layer_names], axis=1)
-    negative = np.stack([neg_acts[layer] for layer in layer_names], axis=1)
+    positive = batched_extract(pos_texts, batch_size=8)
+    negative = batched_extract(neg_texts, batch_size=8)
+    # ---------------------------------------------
 
     print(f"✅ Done: positive {positive.shape}, negative {negative.shape}")
     return positive, negative, layer_names
