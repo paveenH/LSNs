@@ -171,30 +171,55 @@ def test_ablation(results, model_name):
 # ======================================================
 def main():
     parser = argparse.ArgumentParser(description="Compare neuron selectivity methods (T-test, NMD)")
-    parser.add_argument("--model", type=str, default="meta-llama/Llama-3.2-1B-Instruct",
-                        help="HuggingFace model name or path")
-    parser.add_argument("--network", type=str, default="language",
+    parser.add_argument("--model", type=str, default="llama3", help="Base model name (e.g., llama3, gpt2)")
+    parser.add_argument("--size", type=str, default="1B", help="Model size (e.g., 1B, 3B, 8B)")
+    parser.add_argument("--network", type=str, default="language", 
                         choices=["language", "theory-of-mind", "multiple-demand"],
                         help="Network type (stimuli domain)")
     parser.add_argument("--pooling", type=str, default="last",
                         choices=["last", "mean", "sum", "orig"],
                         help="Pooling strategy for activations")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size for extraction")
-    parser.add_argument("--percentage", type=float, default=5.0,help="Percentage of neurons to select")
-
+    parser.add_argument("--percentage", type=float, default=5.0, help="Percentage of neurons to select")
     args = parser.parse_args()
 
+    # Mapping table
+    model_map = {
+        # llama3 family
+        ("llama3", "8B"): "meta-llama/Llama-3.1-8B-Instruct",
+        ("llama3", "3B"): "meta-llama/Llama-3.2-3B-Instruct",
+        ("llama3", "1B"): "meta-llama/Llama-3.2-1B-Instruct",
+        # GPT2 (single entry, no size)
+        ("gpt2", None): "gpt2",
+    }
+
+    # Resolve model path
+    key = (args.model.lower(), args.size.upper() if hasattr(args, "size") else None)
+    if key not in model_map:
+        if args.model.lower() == "gpt2":
+            model_path = "gpt2"
+        else:
+            raise ValueError(f"Unknown model combination: {args.model}, {args.size}")
+    else:
+        model_path = model_map[key]
+
+    print(f"🧩 Using model: {model_path}")
+
+    # Step 1
     positive, negative, layer_names = extract_data(
-        model_name=args.model,
+        model_name=model_path,
         network=args.network,
         pooling=args.pooling,
         batch_size=args.batch_size,
     )
 
-    results = run_all_analyses(positive, negative, layer_names, args.percentage)
+    # Step 2
+    results = run_all_analyses(
+        positive, negative, layer_names, args.percentage, model_name=model_path
+    )
+
+    # Step 3
     compare_selection(results)
-    test_ablation(results, model_name=args.model)
 
-
-if __name__ == "__main__":
-    main()
+    # Step 4
+    test_ablation(results, model_name=model_path)
