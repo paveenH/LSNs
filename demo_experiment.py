@@ -189,7 +189,6 @@ def main():
         network=args.network,
         pooling=args.pooling,
         batch_size=args.batch_size,
-        device=args.device,
     )
 
     results = run_all_analyses(positive, negative, layer_names, args.percentage)
