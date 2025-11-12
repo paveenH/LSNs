@@ -193,7 +193,7 @@ def main():
 
     results = run_all_analyses(positive, negative, layer_names, args.percentage)
     compare_selection(results)
-    test_ablation(results, model_name=args.model, device=args.device)
+    test_ablation(results, model_name=args.model)
 
 
 if __name__ == "__main__":
