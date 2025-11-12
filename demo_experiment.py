@@ -61,39 +61,47 @@ def extract_data(model_name, network, pooling, batch_size):
     positive = batched_extract(pos_texts, batch_size)
     negative = batched_extract(neg_texts, batch_size)
 
-    print(f"✅ Done: positive {positive.shape}, negative {negative.shape}")
+    print(f"Done: positive {positive.shape}, negative {negative.shape}")
     return positive, negative, layer_names
 
 
 # ======================================================
 # STEP 2 — Run analyzers
 # ======================================================
-def run_all_analyses(positive, negative, layer_names, percentage=5.0):
+def run_all_analyses(positive, negative, layer_names, percentage=5.0, model_name="unknown", base_model="llama3", size="1B"):
     print("[2] Running analysis methods...")
 
     cache_dir = "cache"
     os.makedirs(cache_dir, exist_ok=True)
 
-    # (a) Absolute-value T-test
+    # Helper: standardize filename prefix
+    def make_save_name(base_model: str, size: str, method: str) -> str:
+        base = f"{base_model.lower()}_{size.upper()}"
+        return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
+
+    # --- (a) Absolute-value T-test ---
     ttest_abs = TTestAnalyzer({"percentage": percentage, "localize_range": "100-100"})
     ttest_abs_mask, ttest_abs_meta = ttest_abs.analyze(positive, negative)
 
-    # (b) Signed T-test 
+    # --- (b) Signed T-test ---
     ttest_signed = TTestSignedAnalyzer({"percentage": percentage, "localize_range": "100-100"})
     ttest_signed_mask, ttest_signed_meta = ttest_signed.analyze(positive, negative)
 
-    # (c) NMD
+    # --- (c) NMD ---
     nmd_analyzer = NMDAnalyzer({"topk_ratio": percentage / 100.0})
     nmd_mask, nmd_meta = nmd_analyzer.analyze(positive, negative)
 
+    # --- Summary ---
     print(f"T-test (abs) selected:   {ttest_abs_mask.sum()} neurons ({ttest_abs_meta['selection_ratio']:.3f})")
     print(f"T-test (signed) selected:{ttest_signed_mask.sum()} neurons ({ttest_signed_meta['selection_ratio']:.3f})")
     print(f"NMD selected:             {nmd_mask.sum()} neurons ({nmd_meta['selection_ratio']:.3f})")
 
-    # Save masks
-    np.save(os.path.join(cache_dir, "real_ttest_abs_mask.npy"), ttest_abs_mask)
-    np.save(os.path.join(cache_dir, "real_ttest_signed_mask.npy"), ttest_signed_mask)
-    np.save(os.path.join(cache_dir, "real_nmd_mask.npy"), nmd_mask)
+    # --- Save ---
+    np.save(make_save_name(base_model, size, "ttest_abs"), ttest_abs_mask)
+    np.save(make_save_name(base_model, size, "ttest_signed"), ttest_signed_mask)
+    np.save(make_save_name(base_model, size, "nmd"), nmd_mask)
+
+    print(f"Saved masks under {cache_dir}/ as {base_model}_{size}_*_mask.npy")
 
     return {
         "ttest_abs_mask": ttest_abs_mask,
@@ -171,30 +179,71 @@ def test_ablation(results, model_name):
 # ======================================================
 def main():
     parser = argparse.ArgumentParser(description="Compare neuron selectivity methods (T-test, NMD)")
-    parser.add_argument("--model", type=str, default="meta-llama/Llama-3.2-1B-Instruct",
-                        help="HuggingFace model name or path")
-    parser.add_argument("--network", type=str, default="language",
+    parser.add_argument("--model", type=str, default="llama3", help="Base model name (e.g., llama3, gpt2)")
+    parser.add_argument("--size", type=str, default="1B", help="Model size (e.g., 1B, 3B, 8B)")
+    parser.add_argument("--network", type=str, default="language", 
                         choices=["language", "theory-of-mind", "multiple-demand"],
                         help="Network type (stimuli domain)")
     parser.add_argument("--pooling", type=str, default="last",
                         choices=["last", "mean", "sum", "orig"],
                         help="Pooling strategy for activations")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size for extraction")
-    parser.add_argument("--percentage", type=float, default=5.0,help="Percentage of neurons to select")
-
+    parser.add_argument("--percentage", type=float, default=5.0, help="Percentage of neurons to select")
     args = parser.parse_args()
 
+    # Mapping table
+    model_map = {
+        # Llama-3 family
+        ("llama3", "8B"): "meta-llama/Llama-3.1-8B-Instruct",
+        ("llama3", "3B"): "meta-llama/Llama-3.2-3B-Instruct",
+        ("llama3", "1B"): "meta-llama/Llama-3.2-1B-Instruct",
+
+        # GPT-2 / GPT-3 family
+        ("gpt2", "base"): "gpt2",
+        ("gpt3", "ada"): "openai-community/gpt3-ada",
+        ("gpt3", "babbage"): "openai-community/gpt3-babbage",
+        ("gpt3", "curie"): "openai-community/gpt3-curie",
+        ("gpt3", "davinci"): "openai-community/gpt3-davinci",
+    }
+    
+
+    # Resolve model path
+    key = (args.model.lower(), args.size.upper() if hasattr(args, "size") else None)
+    if key not in model_map:
+        if args.model.lower() == "gpt2":
+            model_path = "gpt2"
+        else:
+            raise ValueError(f"Unknown model combination: {args.model}, {args.size}")
+    else:
+        model_path = model_map[key]
+
+    print(f"Using model: {model_path}")
+
+    # Step 1
     positive, negative, layer_names = extract_data(
-        model_name=args.model,
+        model_name=model_path,
         network=args.network,
         pooling=args.pooling,
         batch_size=args.batch_size,
     )
 
-    results = run_all_analyses(positive, negative, layer_names, args.percentage)
+    # Step 2
+    results = run_all_analyses(
+        positive,
+        negative,
+        layer_names,
+        args.percentage,
+        model_name=model_path,
+        base_model=args.model,
+        size=args.size,
+    )
+    
+
+    # Step 3
     compare_selection(results)
-    test_ablation(results, model_name=args.model)
 
-
+    # Step 4
+    test_ablation(results, model_name=model_path)
+    
 if __name__ == "__main__":
     main()
