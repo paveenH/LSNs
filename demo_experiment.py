@@ -61,7 +61,7 @@ def extract_data(model_name, network, pooling, batch_size):
     positive = batched_extract(pos_texts, batch_size)
     negative = batched_extract(neg_texts, batch_size)
 
-    print(f"✅ Done: positive {positive.shape}, negative {negative.shape}")
+    print(f"Done: positive {positive.shape}, negative {negative.shape}")
     return positive, negative, layer_names
 
 
@@ -211,7 +211,7 @@ def main():
     else:
         model_path = model_map[key]
 
-    print(f"🧩 Using model: {model_path}")
+    print(f"Using model: {model_path}")
 
     # Step 1
     positive, negative, layer_names = extract_data(
