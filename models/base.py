@@ -122,7 +122,6 @@ class BaseModel(ABC):
             self.logger.info("Removed ablation hooks")
     
     
-    
     @torch.no_grad()
     def extract_activations(
         self, 
