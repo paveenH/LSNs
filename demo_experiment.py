@@ -20,11 +20,8 @@ from analysis.nmd_analyzer import NMDAnalyzer
 # ======================================================
 # STEP 1 — Extract activations
 # ======================================================
-def extract_data(model_name, network, pooling, batch_size, device=None):
-    print(f"[1] Extracting activations from {model_name} on {network} stimuli...")
-
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+def extract_data(model_name, network, pooling, batch_size):
+    print(f"[1] Extracting activations from {model_name} on {network} stimuli...")        
 
     config = {
         "device_map": "auto",
@@ -136,12 +133,9 @@ def compare_selection(results):
 # ======================================================
 # STEP 4 — Test ablation
 # ======================================================
-def test_ablation(results, model_name, device=None):
+def test_ablation(results, model_name):
     print("\n[4] Testing ablation effects via BaseModel...")
-
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = ModelFactory.create_model(model_name, config={})
     model.to_device(device)
     model.model.eval()
@@ -186,9 +180,7 @@ def main():
                         choices=["last", "mean", "sum", "orig"],
                         help="Pooling strategy for activations")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size for extraction")
-    parser.add_argument("--percentage", type=float, default=5.0,
-                        help="Percentage of neurons to select")
-    parser.add_argument("--device", type=str, default=None, help="Device override (cuda / cpu)")
+    parser.add_argument("--percentage", type=float, default=5.0,help="Percentage of neurons to select")
 
     args = parser.parse_args()
 
