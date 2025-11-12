@@ -65,59 +65,62 @@ class BaseModel(ABC):
     
     def set_language_selective_mask(self, mask: Optional[torch.Tensor]) -> None:
         """Set language selective mask for ablation experiments."""
-        if hasattr(self.model, 'set_language_selective_mask'):
-            self.model.set_language_selective_mask(mask)
-            if mask is not None:
-                self._register_ablation_hooks()
-                self.logger.info(f"Language selective mask set with shape: {mask.shape}")
-            else:
-                self._remove_ablation_hooks()
-                self.logger.info("Language selective mask cleared")
+        self.language_selective_mask = mask
+        if mask is not None:
+            self._register_ablation_hooks()
+            self.logger.info(f"Language selective mask set with shape: {mask.shape}")
         else:
-            self.logger.warning("Model does not support language selective mask")
-            
+            self._remove_ablation_hooks()
+            self.logger.info("Language selective mask cleared")
     
     def _register_ablation_hooks(self):
-        """Generic hook registration for transformer-based models."""
-        if hasattr(self, "_ablation_hooks") and self._ablation_hooks:
-            return  # already registered
+        """Attach forward hooks to all transformer blocks to apply ablation mask."""
+        if getattr(self, "_ablation_hooks", None):
+            return
 
         def make_hook(layer_idx):
-            base_self = self  
+            base_self = self
             def hook_fn(module, inputs, outputs):
                 if base_self.language_selective_mask is None:
                     return outputs
+
                 hidden = outputs[0] if isinstance(outputs, tuple) else outputs
-                mask_vec = base_self.language_selective_mask[layer_idx]  # (hidden_dim,)
+                mask_vec = base_self.language_selective_mask[layer_idx]
+
+                if mask_vec.dtype != hidden.dtype:
+                    mask_vec = mask_vec.to(dtype=hidden.dtype)
+                if mask_vec.device != hidden.device:
+                    mask_vec = mask_vec.to(device=hidden.device)
+
                 masked = hidden * mask_vec.unsqueeze(0).unsqueeze(0)
-                if isinstance(outputs, tuple):
-                    return (masked,) + outputs[1:]
-                return masked
+                return (masked,) + outputs[1:] if isinstance(outputs, tuple) else masked
             return hook_fn
 
-        # auto-detect transformer layers
         if hasattr(self.model, "model") and hasattr(self.model.model, "layers"):
-            blocks = self.model.model.layers
+            blocks = self.model.model.layers                  # e.g. Llama, Mistral
         elif hasattr(self.model, "transformer") and hasattr(self.model.transformer, "h"):
-            blocks = self.model.transformer.h
+            blocks = self.model.transformer.h                 # e.g. GPT-2
+        elif hasattr(self.model, "encoder") and hasattr(self.model.encoder, "layers"):
+            blocks = self.model.encoder.layers                # e.g. T5 encoder
         else:
-            self.logger.warning("No transformer blocks found for ablation.")
+            self.logger.warning("No recognizable transformer blocks found.")
             return
 
         self._ablation_hooks = []
         for i, block in enumerate(blocks):
             h = block.register_forward_hook(make_hook(i))
             self._ablation_hooks.append(h)
-
         self.logger.info(f"Registered {len(self._ablation_hooks)} ablation hooks")
-
+    
+    
     def _remove_ablation_hooks(self):
-        """Remove ablation hooks."""
-        if hasattr(self, "_ablation_hooks"):
+        """Remove any registered ablation hooks."""
+        if getattr(self, "_ablation_hooks", None):
             for h in self._ablation_hooks:
                 h.remove()
             self._ablation_hooks = []
             self.logger.info("Removed ablation hooks")
+    
     
     
     @torch.no_grad()
