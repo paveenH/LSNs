@@ -193,13 +193,19 @@ def main():
 
     # Mapping table
     model_map = {
-        # llama3 family
+        # Llama-3 family
         ("llama3", "8B"): "meta-llama/Llama-3.1-8B-Instruct",
         ("llama3", "3B"): "meta-llama/Llama-3.2-3B-Instruct",
         ("llama3", "1B"): "meta-llama/Llama-3.2-1B-Instruct",
-        # GPT2 (single entry, no size)
-        ("gpt2", None): "gpt2",
+
+        # GPT-2 / GPT-3 family
+        ("gpt2", "base"): "gpt2",
+        ("gpt3", "ada"): "openai-community/gpt3-ada",
+        ("gpt3", "babbage"): "openai-community/gpt3-babbage",
+        ("gpt3", "curie"): "openai-community/gpt3-curie",
+        ("gpt3", "davinci"): "openai-community/gpt3-davinci",
     }
+    
 
     # Resolve model path
     key = (args.model.lower(), args.size.upper() if hasattr(args, "size") else None)
