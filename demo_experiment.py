@@ -238,3 +238,6 @@ def main():
 
     # Step 4
     test_ablation(results, model_name=model_path)
+    
+if __name__ == "__main__":
+    main()
