@@ -185,11 +185,10 @@ def main():
     parser.add_argument("--pooling", type=str, default="last",
                         choices=["last", "mean", "sum", "orig"],
                         help="Pooling strategy for activations")
-    parser.add_argument("--batch-size", type=int, default=4, help="Batch size for extraction")
+    parser.add_argument("--batch-size", type=int, default=8, help="Batch size for extraction")
     parser.add_argument("--percentage", type=float, default=5.0,
                         help="Percentage of neurons to select")
     parser.add_argument("--device", type=str, default=None, help="Device override (cuda / cpu)")
-    parser.add_argument("--skip-ablation", action="store_true", help="Skip ablation test")
 
     args = parser.parse_args()
 
