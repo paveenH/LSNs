@@ -74,43 +74,33 @@ class BaseModel(ABC):
             self.logger.info("Language selective mask cleared")
     
     def _register_ablation_hooks(self):
-        """Attach forward hooks to all transformer blocks to apply ablation mask."""
-        if getattr(self, "_ablation_hooks", None):
+        """Attach forward hooks to transformer blocks for applying ablation mask."""
+        if hasattr(self, "_ablation_hooks") and self._ablation_hooks:
             return
 
         def make_hook(layer_idx):
-            base_self = self
             def hook_fn(module, inputs, outputs):
-                if base_self.language_selective_mask is None:
+                if self.language_selective_mask is None:
                     return outputs
-
                 hidden = outputs[0] if isinstance(outputs, tuple) else outputs
-                mask_vec = base_self.language_selective_mask[layer_idx]
-
-                if mask_vec.dtype != hidden.dtype:
-                    mask_vec = mask_vec.to(dtype=hidden.dtype)
-                if mask_vec.device != hidden.device:
-                    mask_vec = mask_vec.to(device=hidden.device)
-
+                mask_vec = self.language_selective_mask[layer_idx].to(hidden.device, dtype=hidden.dtype)
                 masked = hidden * mask_vec.unsqueeze(0).unsqueeze(0)
                 return (masked,) + outputs[1:] if isinstance(outputs, tuple) else masked
             return hook_fn
 
-        if hasattr(self.model, "model") and hasattr(self.model.model, "layers"):
-            blocks = self.model.model.layers                  # e.g. Llama, Mistral
-        elif hasattr(self.model, "transformer") and hasattr(self.model.transformer, "h"):
-            blocks = self.model.transformer.h                 # e.g. GPT-2
-        elif hasattr(self.model, "encoder") and hasattr(self.model.encoder, "layers"):
-            blocks = self.model.encoder.layers                # e.g. T5 encoder
-        else:
+        # Unified block resolution
+        blocks = (
+            getattr(getattr(self.model, "model", None), "layers", None)
+            or getattr(getattr(self.model, "transformer", None), "h", None)
+            or getattr(getattr(self.model, "encoder", None), "layers", None)
+        )
+        if blocks is None:
             self.logger.warning("No recognizable transformer blocks found.")
             return
 
-        self._ablation_hooks = []
-        for i, block in enumerate(blocks):
-            h = block.register_forward_hook(make_hook(i))
-            self._ablation_hooks.append(h)
+        self._ablation_hooks = [block.register_forward_hook(make_hook(i)) for i, block in enumerate(blocks)]
         self.logger.info(f"Registered {len(self._ablation_hooks)} ablation hooks")
+    
     
     
     def _remove_ablation_hooks(self):
