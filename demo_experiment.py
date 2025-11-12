@@ -181,7 +181,7 @@ def test_ablation(results, model_name="gpt2", device=None):
 # MAIN PIPELINE
 # ======================================================
 def main():
-    model_name = "meta-llama/Llama-3.2-3B-Instruct"
+    model_name = "meta-llama/Llama-3.2-1B-Instruct"
     # model_name = "gpt2"
     network = "language"
     pooling = "last"
