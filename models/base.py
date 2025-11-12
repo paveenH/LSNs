@@ -33,6 +33,8 @@ class BaseModel(ABC):
         self._load_model()
         self._setup_tokenizer()
         self._get_model_info()
+        
+        self.language_selective_mask = None
     
     @abstractmethod
     def _load_model(self) -> None:
@@ -63,14 +65,52 @@ class BaseModel(ABC):
     
     def set_language_selective_mask(self, mask: Optional[torch.Tensor]) -> None:
         """Set language selective mask for ablation experiments."""
-        if hasattr(self.model, 'set_language_selective_mask'):
-            self.model.set_language_selective_mask(mask)
-            if mask is not None:
-                self.logger.info(f"Language selective mask set with shape: {mask.shape}")
-            else:
-                self.logger.info("Language selective mask cleared")
+        self.language_selective_mask = mask
+        if mask is not None:
+            self._register_ablation_hooks()
+            self.logger.info(f"Language selective mask set with shape: {mask.shape}")
         else:
-            self.logger.warning("Model does not support language selective mask")
+            self._remove_ablation_hooks()
+            self.logger.info("Language selective mask cleared")
+    
+    def _register_ablation_hooks(self):
+        """Attach forward hooks to transformer blocks for applying ablation mask."""
+        if hasattr(self, "_ablation_hooks") and self._ablation_hooks:
+            return
+
+        def make_hook(layer_idx):
+            def hook_fn(module, inputs, outputs):
+                if self.language_selective_mask is None:
+                    return outputs
+                hidden = outputs[0] if isinstance(outputs, tuple) else outputs
+                mask_vec = self.language_selective_mask[layer_idx].to(hidden.device, dtype=hidden.dtype)
+                masked = hidden * mask_vec.unsqueeze(0).unsqueeze(0)
+                return (masked,) + outputs[1:] if isinstance(outputs, tuple) else masked
+            return hook_fn
+
+        # Unified block resolution
+        blocks = (
+            getattr(getattr(self.model, "model", None), "layers", None)
+            or getattr(getattr(self.model, "transformer", None), "h", None)
+            or getattr(getattr(self.model, "encoder", None), "layers", None)
+        )
+        if blocks is None:
+            self.logger.warning("No recognizable transformer blocks found.")
+            return
+
+        self._ablation_hooks = [block.register_forward_hook(make_hook(i)) for i, block in enumerate(blocks)]
+        self.logger.info(f"Registered {len(self._ablation_hooks)} ablation hooks")
+    
+    
+    
+    def _remove_ablation_hooks(self):
+        """Remove any registered ablation hooks."""
+        if getattr(self, "_ablation_hooks", None):
+            for h in self._ablation_hooks:
+                h.remove()
+            self._ablation_hooks = []
+            self.logger.info("Removed ablation hooks")
+    
     
     @torch.no_grad()
     def extract_activations(

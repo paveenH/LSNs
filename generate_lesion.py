@@ -1,70 +1,13 @@
 import os
-import sys
 import torch
 import argparse
 import numpy as np
-from transformers import AutoTokenizer, GPT2LMHeadModel
-from collections import OrderedDict
+from transformers import AutoTokenizer
 
-CACHE_DIR = os.environ.get("LOC_CACHE", f"cache")
+from models import ModelFactory
 
-class PaperCorrectMaskedGPT2(GPT2LMHeadModel):
-    """GPT2 model with language selective masking exactly as described in the paper."""
-    
-    def __init__(self, config):
-        super().__init__(config)
-        self.language_selective_mask = None
-        self.original_forwards = {}
-        self.hooks_registered = False
-    
-    def set_language_selective_mask(self, mask):
-        """Set the language selective mask.
-        
-        Args:
-            mask: Tensor of shape (num_layers, hidden_dim) where 0 = ablate, 1 = keep
-        """
-        self.language_selective_mask = mask
-        if mask is not None:
-            self._register_ablation_hooks()
-        else:
-            self._remove_ablation_hooks()
-    
-    def _register_ablation_hooks(self):
-        """Register hooks on transformer blocks to apply ablation at each layer output."""
-        if self.hooks_registered:
-            return
-            
-        def create_ablation_hook(layer_idx):
-            def ablation_hook(module, input, output):
-                if self.language_selective_mask is not None:
-                    # output is either a tensor or tuple with hidden states as first element
-                    hidden_states = output[0] if isinstance(output, tuple) else output
-                    # Apply layer-specific mask: mask shape (hidden_dim,), hidden_states shape (batch, seq, hidden)
-                    layer_mask = self.language_selective_mask[layer_idx]  # (hidden_dim,)
-                    masked_hidden = hidden_states * layer_mask.unsqueeze(0).unsqueeze(0)
-                    
-                    if isinstance(output, tuple):
-                        return (masked_hidden,) + output[1:]
-                    else:
-                        return masked_hidden
-                return output
-            return ablation_hook
-        
-        # Register hooks on each transformer block
-        self.ablation_hooks = []
-        for i, block in enumerate(self.transformer.h):
-            hook = block.register_forward_hook(create_ablation_hook(i))
-            self.ablation_hooks.append(hook)
-        
-        self.hooks_registered = True
-    
-    def _remove_ablation_hooks(self):
-        """Remove ablation hooks."""
-        if hasattr(self, 'ablation_hooks'):
-            for hook in self.ablation_hooks:
-                hook.remove()
-            self.ablation_hooks = []
-        self.hooks_registered = False
+
+CACHE_DIR = os.environ.get("LOC_CACHE", "cache")
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
@@ -89,25 +32,22 @@ if __name__ == "__main__":
     loc_range = args.localize_range
 
     print(f"> Running with model {model_name}")
-
-    # Use paper-correct model implementation
-    if "gpt2" in model_name:
-        model = PaperCorrectMaskedGPT2.from_pretrained(model_name)
-    else:
-        raise ValueError(f"Model {model_name} not supported in paper-correct version")
-
+    
+    # === NEW: Load hook from BaseModel ===
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.pad_token = tokenizer.eos_token
-
-    model.to(device)
-    model.eval()
-
-    model_name = os.path.basename(model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    model = ModelFactory.create_model(model_name, config={})
+    model.to_device(device)
+    model.model.eval()  
 
     print(f"> Running with {network} mask")
 
+
     if network in ["language", "random"]:
-        mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
+        # mask_path = f"{model_name}_network=language_pooling={pooling}_range={loc_range}_perc={percentage}_nunits=None_pretrained=True.npy"
+        mask_path = "real_nmd_mask.npy"
     else:
         mask_path = None
 
@@ -128,7 +68,9 @@ if __name__ == "__main__":
 
         # PAPER CORRECT: Invert the mask so 0 = ablate, 1 = keep
         inverted_mask = 1 - language_mask
-        model.set_language_selective_mask(torch.tensor(inverted_mask, dtype=torch.float32).to(device))
+        mask_dtype = next(model.model.parameters()).dtype
+        model.set_language_selective_mask(torch.tensor(inverted_mask, dtype=mask_dtype).to(device))
+
         print("Loaded language mask with", num_active_units, "units, with shape", language_mask.shape)
         print("Mask inverted: 0 = ablate, 1 = keep")
         print("Applying ablation at each transformer block output (paper methodology)")
@@ -140,13 +82,14 @@ if __name__ == "__main__":
     # Set seed for reproducibility
     torch.manual_seed(seed)
     np.random.seed(seed)
-
+    
     outputs = model.generate(
-        **inputs,
+        prompt,
         max_new_tokens=10,
-        do_sample=False,
-        num_return_sequences=1,
-        pad_token_id=tokenizer.eos_token_id
+        do_sample=False
     )
 
-    print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+    print("\n=== Generated text ===")
+    print(outputs)
+
+    

@@ -1,61 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Demo: Comparing T-test vs NMD neuron selection on real model activations
-(using language-localizer stimuli and unified model.extract_activations()).
-
-This demo replicates the NMD vs T-test comparison from the paper,
-but now uses real hidden activations obtained directly from the model,
-through the standardized ModelFactory wrapper (same API as in brain_alignment.py).
+Demo: Comparing T-test (abs vs signed) vs NMD neuron selection
+on real model activations using unified ModelFactory interface.
+Supports command-line arguments.
 """
 
 import os
 import torch
 import numpy as np
+import argparse
 from models.factory import ModelFactory
 from datasets import LangLocDataset, TOMLocDataset, MDLocDataset
 from analysis.ttest_analyzer import TTestAnalyzer
+from analysis.ttest_signed_analyzer import TTestSignedAnalyzer  
 from analysis.nmd_analyzer import NMDAnalyzer
-from generate_lesion import PaperCorrectMaskedGPT2
-from transformers import AutoTokenizer
 
 
 # ======================================================
-# STEP 1 — Extract real activations using ModelFactory
+# STEP 1 — Extract activations
 # ======================================================
-def extract_data(model_name="gpt2", network="language", pooling="last", batch_size=4, device=None):
-    """
-    Extracts hidden activations from the given model using the same mechanism
-    as brain_alignment.py (through model.extract_activations()).
+def extract_data(model_name, network, pooling, batch_size):
+    print(f"[1] Extracting activations from {model_name} on {network} stimuli...")        
 
-    Args:
-        model_name: str, model identifier (e.g. "gpt2", "meta-llama/Llama-3.2-1B")
-        network: str, one of ["language", "theory-of-mind", "multiple-demand"]
-        pooling: str, token pooling method ("last", "mean", "sum", "orig")
-        batch_size: int, number of stimuli per batch
-        device: torch.device or str, e.g. "cuda" or "cpu"
-
-    Returns:
-        positive: np.ndarray, shape (N_pos, L, H)
-        negative: np.ndarray, shape (N_neg, L, H)
-        layer_names: list of layer identifiers
-    """
-    print(f"[1] Extracting real activations from {model_name} on {network} stimuli...")
-
-    # Select device
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    # Load model via unified factory (BaseModel wrapper)
     config = {
-        "device_map": device,
-        "torch_dtype": "float32",
+        "device_map": "auto",
+        "torch_dtype": "float16", 
+        "low_cpu_mem_usage": True,
         "trust_remote_code": True,
     }
+    
     model = ModelFactory.create_model(model_name, config)
     layer_names = model.get_layer_names()
 
-    # Load localization dataset
+    # Dataset selection
     if network == "language":
         dataset = LangLocDataset()
     elif network == "theory-of-mind":
@@ -65,136 +43,157 @@ def extract_data(model_name="gpt2", network="language", pooling="last", batch_si
     else:
         raise ValueError(f"Unsupported network type: {network}")
 
-    # Extract per-layer activations for positive and negative stimuli
     pos_texts = [str(x) for x in dataset.positive]
     neg_texts = [str(x) for x in dataset.negative]
 
     print(f"Extracting {len(pos_texts)} positive and {len(neg_texts)} negative examples...")
 
-    pos_acts = model.extract_activations(pos_texts, layer_names, pooling)
-    neg_acts = model.extract_activations(neg_texts, layer_names, pooling)
+    def batched_extract(texts, batch_size=8):
+        all_batches = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i+batch_size]
+            acts = model.extract_activations(batch, layer_names, pooling)
+            batch_stack = np.stack([acts[layer] for layer in layer_names], axis=1)
+            all_batches.append(batch_stack)
+            torch.cuda.empty_cache()
+        return np.concatenate(all_batches, axis=0)
 
-    # Stack into (N, L, H)
-    positive = np.stack([pos_acts[layer] for layer in layer_names], axis=1)
-    negative = np.stack([neg_acts[layer] for layer in layer_names], axis=1)
+    positive = batched_extract(pos_texts, batch_size)
+    negative = batched_extract(neg_texts, batch_size)
 
     print(f"✅ Done: positive {positive.shape}, negative {negative.shape}")
     return positive, negative, layer_names
 
 
 # ======================================================
-# STEP 2 — Run both analyzers (T-test & NMD)
+# STEP 2 — Run analyzers
 # ======================================================
-def run_both_analyses(positive, negative, layer_names):
+def run_all_analyses(positive, negative, layer_names, percentage=5.0):
     print("[2] Running analysis methods...")
 
-    # Global T-test analyzer
-    ttest_analyzer = TTestAnalyzer({"percentage": 5.0, "localize_range": "100-100"})
-    ttest_mask, ttest_meta = ttest_analyzer.analyze(positive, negative)
+    cache_dir = "cache"
+    os.makedirs(cache_dir, exist_ok=True)
 
-    # Layerwise NMD analyzer
-    nmd_analyzer = NMDAnalyzer({"topk_ratio": 0.05})
+    # (a) Absolute-value T-test
+    ttest_abs = TTestAnalyzer({"percentage": percentage, "localize_range": "100-100"})
+    ttest_abs_mask, ttest_abs_meta = ttest_abs.analyze(positive, negative)
+
+    # (b) Signed T-test 
+    ttest_signed = TTestSignedAnalyzer({"percentage": percentage, "localize_range": "100-100"})
+    ttest_signed_mask, ttest_signed_meta = ttest_signed.analyze(positive, negative)
+
+    # (c) NMD
+    nmd_analyzer = NMDAnalyzer({"topk_ratio": percentage / 100.0})
     nmd_mask, nmd_meta = nmd_analyzer.analyze(positive, negative)
 
-    print(f"T-test selected: {ttest_mask.sum()} neurons ({ttest_meta['selection_ratio']:.3f})")
-    print(f"NMD selected: {nmd_mask.sum()} neurons ({nmd_meta['selection_ratio']:.3f})")
-    
-    cache_dir = "cache"
-    if not os.path.exists(cache_dir):
-        os.makedirs(cache_dir, exist_ok=True)
+    print(f"T-test (abs) selected:   {ttest_abs_mask.sum()} neurons ({ttest_abs_meta['selection_ratio']:.3f})")
+    print(f"T-test (signed) selected:{ttest_signed_mask.sum()} neurons ({ttest_signed_meta['selection_ratio']:.3f})")
+    print(f"NMD selected:             {nmd_mask.sum()} neurons ({nmd_meta['selection_ratio']:.3f})")
 
-    np.save("cache/real_ttest_mask.npy", ttest_mask)
-    np.save("cache/real_nmd_mask.npy", nmd_mask)
+    # Save masks
+    np.save(os.path.join(cache_dir, "real_ttest_abs_mask.npy"), ttest_abs_mask)
+    np.save(os.path.join(cache_dir, "real_ttest_signed_mask.npy"), ttest_signed_mask)
+    np.save(os.path.join(cache_dir, "real_nmd_mask.npy"), nmd_mask)
 
-    return {"ttest_mask": ttest_mask, "nmd_mask": nmd_mask, "layer_names": layer_names}
+    return {
+        "ttest_abs_mask": ttest_abs_mask,
+        "ttest_signed_mask": ttest_signed_mask,
+        "nmd_mask": nmd_mask,
+        "layer_names": layer_names,
+    }
 
 
 # ======================================================
-# STEP 3 — Compare layerwise selection results
+# STEP 3 — Layerwise Comparison
 # ======================================================
 def compare_selection(results):
-    ttest_mask = results["ttest_mask"]
-    nmd_mask = results["nmd_mask"]
+    ttest_abs = results["ttest_abs_mask"]
+    ttest_signed = results["ttest_signed_mask"]
+    nmd = results["nmd_mask"]
 
-    ttest_per_layer = ttest_mask.sum(axis=1)
-    nmd_per_layer = nmd_mask.sum(axis=1)
+    per_layer_abs = ttest_abs.sum(axis=1)
+    per_layer_signed = ttest_signed.sum(axis=1)
+    per_layer_nmd = nmd.sum(axis=1)
 
     print("\n[3] Per-layer Comparison:")
-    print(f"{'Layer':<6} {'T-test':<8} {'NMD':<8} {'Diff':<8}")
-    print("-" * 36)
+    print(f"{'Layer':<6} {'AbsT':<8} {'SignedT':<8} {'NMD':<8}")
+    print("-" * 40)
+    for i in range(len(per_layer_abs)):
+        print(f"{i:<6} {int(per_layer_abs[i]):<8} {int(per_layer_signed[i]):<8} {int(per_layer_nmd[i]):<8}")
 
-    for i in range(len(ttest_per_layer)):
-        diff = int(ttest_per_layer[i]) - int(nmd_per_layer[i])
-        print(f"{i:<6} {int(ttest_per_layer[i]):<8} {int(nmd_per_layer[i]):<8} {diff:+4d}")
+    overlap_abs_nmd = np.logical_and(ttest_abs, nmd).sum()
+    overlap_signed_nmd = np.logical_and(ttest_signed, nmd).sum()
+    overlap_abs_signed = np.logical_and(ttest_abs, ttest_signed).sum()
 
-    overlap = np.logical_and(ttest_mask, nmd_mask).sum()
-    print(f"\nOverlap: {overlap} / {ttest_mask.sum()} = {overlap / ttest_mask.sum():.3f}")
+    print(f"\nOverlap(abs↔signed): {overlap_abs_signed / ttest_abs.sum():.3f}")
+    print(f"Overlap(abs↔nmd):    {overlap_abs_nmd / ttest_abs.sum():.3f}")
+    print(f"Overlap(signed↔nmd): {overlap_signed_nmd / ttest_signed.sum():.3f}")
 
 
 # ======================================================
-# STEP 4 — Optional: Test ablation using PaperCorrectMaskedGPT2
+# STEP 4 — Test ablation
 # ======================================================
-def test_ablation(results, model_name="gpt2"):
-    """
-    Performs a quick qualitative ablation test using GPT-2 and the generated masks.
-    This uses the PaperCorrectMaskedGPT2 class with forward hooks.
-    """
-    print("\n[4] Testing ablation effects (GPT-2 only)...")
+def test_ablation(results, model_name):
+    print("\n[4] Testing ablation effects via BaseModel...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = ModelFactory.create_model(model_name, config={})
+    model.to_device(device)
+    model.model.eval()
 
-    try:
-        model = PaperCorrectMaskedGPT2.from_pretrained(model_name, torch_dtype=torch.float32)
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        tokenizer.pad_token = tokenizer.eos_token
+    prompt = "The quick brown fox"
 
-        prompt = "The quick brown fox"
-        inputs = tokenizer(prompt, return_tensors="pt")
+    abs_mask = results.get("ttest_abs_mask")
+    signed_mask = results.get("ttest_signed_mask")
+    nmd_mask = results.get("nmd_mask")
 
-        methods = {
-            "Baseline (no ablation)": None,
-            "T-test ablation": 1 - results["ttest_mask"],
-            "NMD ablation": 1 - results["nmd_mask"],
-        }
+    methods = {
+        "Baseline (no ablation)": None,
+        "T-test abs ablation": 1 - abs_mask,
+        "T-test signed ablation": 1 - signed_mask,
+        "NMD ablation": 1 - nmd_mask,
+    }
 
-        for name, mask in methods.items():
+    for name, mask in methods.items():
+        print(f"\n--- {name} ---")
+        try:
+            mask_tensor = None
             if mask is not None:
-                model.set_language_selective_mask(torch.tensor(mask, dtype=torch.float32))
-            else:
-                model.set_language_selective_mask(None)
-
-            outputs = model.generate(**inputs, max_new_tokens=10, do_sample=False)
-            text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            print(f"{name:<22}: {text}")
-
-    except Exception as e:
-        print(f"Ablation test skipped due to error: {e}")
-        import traceback
-        traceback.print_exc()
+                mask_tensor = torch.tensor(mask, dtype=torch.float16, device=device)
+            model.set_language_selective_mask(mask_tensor)
+            output_text = model.generate(prompt, max_new_tokens=15, do_sample=False)
+            print(output_text)
+        except Exception as e:
+            print(f"[!] Error during {name}: {e}")
 
 
 # ======================================================
-# MAIN PIPELINE
+# MAIN ENTRY
 # ======================================================
 def main():
-    model_name = "gpt2"
-    network = "language"
-    pooling = "last"
+    parser = argparse.ArgumentParser(description="Compare neuron selectivity methods (T-test, NMD)")
+    parser.add_argument("--model", type=str, default="meta-llama/Llama-3.2-1B-Instruct",
+                        help="HuggingFace model name or path")
+    parser.add_argument("--network", type=str, default="language",
+                        choices=["language", "theory-of-mind", "multiple-demand"],
+                        help="Network type (stimuli domain)")
+    parser.add_argument("--pooling", type=str, default="last",
+                        choices=["last", "mean", "sum", "orig"],
+                        help="Pooling strategy for activations")
+    parser.add_argument("--batch-size", type=int, default=8, help="Batch size for extraction")
+    parser.add_argument("--percentage", type=float, default=5.0,help="Percentage of neurons to select")
 
-    # Step 1: Extract real activations
+    args = parser.parse_args()
+
     positive, negative, layer_names = extract_data(
-        model_name=model_name,
-        network=network,
-        pooling=pooling,
-        batch_size=4,
+        model_name=args.model,
+        network=args.network,
+        pooling=args.pooling,
+        batch_size=args.batch_size,
     )
 
-    # Step 2: Run both analyses
-    results = run_both_analyses(positive, negative, layer_names)
-
-    # Step 3: Compare layerwise selection
+    results = run_all_analyses(positive, negative, layer_names, args.percentage)
     compare_selection(results)
-
-    # Step 4: Test ablation (optional)
-    test_ablation(results, model_name=model_name)
+    test_ablation(results, model_name=args.model)
 
 
 if __name__ == "__main__":
