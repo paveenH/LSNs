@@ -68,32 +68,40 @@ def extract_data(model_name, network, pooling, batch_size):
 # ======================================================
 # STEP 2 — Run analyzers
 # ======================================================
-def run_all_analyses(positive, negative, layer_names, percentage=5.0):
+def run_all_analyses(positive, negative, layer_names, percentage=5.0, model_name="unknown", base_model="llama3", size="1B"):
     print("[2] Running analysis methods...")
 
     cache_dir = "cache"
     os.makedirs(cache_dir, exist_ok=True)
 
-    # (a) Absolute-value T-test
+    # Helper: standardize filename prefix
+    def make_save_name(base_model: str, size: str, method: str) -> str:
+        base = f"{base_model.lower()}_{size.upper()}"
+        return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
+
+    # --- (a) Absolute-value T-test ---
     ttest_abs = TTestAnalyzer({"percentage": percentage, "localize_range": "100-100"})
     ttest_abs_mask, ttest_abs_meta = ttest_abs.analyze(positive, negative)
 
-    # (b) Signed T-test 
+    # --- (b) Signed T-test ---
     ttest_signed = TTestSignedAnalyzer({"percentage": percentage, "localize_range": "100-100"})
     ttest_signed_mask, ttest_signed_meta = ttest_signed.analyze(positive, negative)
 
-    # (c) NMD
+    # --- (c) NMD ---
     nmd_analyzer = NMDAnalyzer({"topk_ratio": percentage / 100.0})
     nmd_mask, nmd_meta = nmd_analyzer.analyze(positive, negative)
 
+    # --- Summary ---
     print(f"T-test (abs) selected:   {ttest_abs_mask.sum()} neurons ({ttest_abs_meta['selection_ratio']:.3f})")
     print(f"T-test (signed) selected:{ttest_signed_mask.sum()} neurons ({ttest_signed_meta['selection_ratio']:.3f})")
     print(f"NMD selected:             {nmd_mask.sum()} neurons ({nmd_meta['selection_ratio']:.3f})")
 
-    # Save masks
-    np.save(os.path.join(cache_dir, "real_ttest_abs_mask.npy"), ttest_abs_mask)
-    np.save(os.path.join(cache_dir, "real_ttest_signed_mask.npy"), ttest_signed_mask)
-    np.save(os.path.join(cache_dir, "real_nmd_mask.npy"), nmd_mask)
+    # --- Save ---
+    np.save(make_save_name(base_model, size, "ttest_abs"), ttest_abs_mask)
+    np.save(make_save_name(base_model, size, "ttest_signed"), ttest_signed_mask)
+    np.save(make_save_name(base_model, size, "nmd"), nmd_mask)
+
+    print(f"Saved masks under {cache_dir}/ as {base_model}_{size}_*_mask.npy")
 
     return {
         "ttest_abs_mask": ttest_abs_mask,
@@ -215,8 +223,15 @@ def main():
 
     # Step 2
     results = run_all_analyses(
-        positive, negative, layer_names, args.percentage, model_name=model_path
+        positive,
+        negative,
+        layer_names,
+        args.percentage,
+        model_name=model_path,
+        base_model=args.model,
+        size=args.size,
     )
+    
 
     # Step 3
     compare_selection(results)
