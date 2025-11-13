@@ -16,11 +16,11 @@ CACHE_DIR = "cache"
 
 model = "llama3"
 size = "8B"
-percentage = 1.0         # e.g., 1.0 for "1.0pct"
-pooling = "orig"         # last / orig / mean / sum
+percentage = 0.5        # e.g., 1.0 for "1.0pct"
+pooling = "last"         # last / orig / mean / sum
 method = "nmd"           # ttest_abs / ttest_signed / nmd
 
-freq_threshold = 15
+freq_threshold = 10
 
 # ======================================================
 # Build filename (new naming convention)
