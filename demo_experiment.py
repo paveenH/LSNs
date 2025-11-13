@@ -68,20 +68,23 @@ def extract_data(model_name, network, pooling, batch_size):
 # ======================================================
 # STEP 2 — Run analyzers
 # ======================================================
+
+# Helper: filename builder
+def make_save_name(cache_dir, base_model: str, size: str, pct: float, pooling: str, method: str) -> str:
+    base = f"{base_model.lower()}_{size.upper()}_{str(pct)}pct_{pooling}"
+    return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
+
+
 def run_all_analyses(
         positive, negative, layer_names, percentage=5.0, 
-        model_name="unknown", base_model="llama3", size="1B"
+        model_name="unknown", base_model="llama3", size="1B", pooling="last"
     ):
     print("[2] Running analysis methods...")
 
     cache_dir = "cache"
     os.makedirs(cache_dir, exist_ok=True)
 
-    # Helper: filename builder
-    def make_save_name(base_model: str, size: str, pct: float, method: str) -> str:
-        base = f"{base_model.lower()}_{size.upper()}_{int(pct)}pct"
-        return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
-
+    
     # --- (a) Absolute-value T-test ---
     ttest_abs = TTestAnalyzer({"percentage": percentage, "localize_range": "100-100"})
     ttest_abs_mask, ttest_abs_meta = ttest_abs.analyze(positive, negative)
@@ -94,18 +97,13 @@ def run_all_analyses(
     nmd_analyzer = NMDAnalyzer({"topk_ratio": percentage / 100.0})
     nmd_mask, nmd_meta = nmd_analyzer.analyze(positive, negative)
 
-    # --- Summary ---
-    print(f"T-test (abs) selected:   {ttest_abs_mask.sum()} neurons ({ttest_abs_meta['selection_ratio']:.3f})")
-    print(f"T-test (signed) selected:{ttest_signed_mask.sum()} neurons ({ttest_signed_meta['selection_ratio']:.3f})")
-    print(f"NMD selected:             {nmd_mask.sum()} neurons ({nmd_meta['selection_ratio']:.3f})")
-
-    # --- Save (with percentage included) ---
-    np.save(make_save_name(base_model, size, percentage, "ttest_abs"), ttest_abs_mask)
-    np.save(make_save_name(base_model, size, percentage, "ttest_signed"), ttest_signed_mask)
-    np.save(make_save_name(base_model, size, percentage, "nmd"), nmd_mask)
+    # --- Save with pooling in name ---
+    np.save(make_save_name(cache_dir, base_model, size, percentage, pooling, "ttest_abs"), ttest_abs_mask)
+    np.save(make_save_name(cache_dir, base_model, size, percentage, pooling, "ttest_signed"), ttest_signed_mask)
+    np.save(make_save_name(cache_dir, base_model, size, percentage, pooling, "nmd"), nmd_mask)
 
     print(f"Saved masks to {cache_dir}/ as:")
-    print(f"  {base_model}_{size}_{int(percentage)}pct_*_mask.npy")
+    print(f"  {base_model}_{size}_{percentage}pct_{pooling}_*_mask.npy")
 
     return {
         "ttest_abs_mask": ttest_abs_mask,
@@ -240,6 +238,7 @@ def main():
         model_name=model_path,
         base_model=args.model,
         size=args.size,
+        pooling=args.pooling,
     )
     
 
