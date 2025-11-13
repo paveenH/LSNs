@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Plot top-1% selective neuron distribution per layer (Figure 2a style).
+
+Input:
+    cache/<model>_<percentage>pct_<mask_type>_mask.npy
+Output:
+    cache/heatmap_<model>_<percentage>pct_<mask_type>.png
+"""
+
+import os
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from model_utils import model_name_map
+
+CACHE_DIR = "cache"
+
+def load_mask(model_prefix, percentage, mask_type, pooling):
+    """
+    Load mask file with explicit mask type:
+        <model_prefix>_<percentage>pct_<mask_type>_mask.npy
+    """
+
+    filename = f"{model_prefix}_{str(percentage)}pct_{pooling}_{mask_type}_mask.npy"
+    path = os.path.join(CACHE_DIR, filename)
+
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"\nMask file not found:\n  {path}\n"
+            f"Available files in cache/: {os.listdir(CACHE_DIR)}\n"
+        )
+    print(f"> Loading mask: {filename}")
+    return np.load(path)
+
+
+def plot_selectivity_heatmap(model_prefix, mask, mask_type, percentage):
+    """Plot per-layer % of selective units"""
+    num_layers, hidden_dim = mask.shape
+    print(f"> Mask shape = {num_layers} × {hidden_dim}")
+
+    per_layer_percent = (mask.sum(axis=1) / hidden_dim) * 100
+    data = per_layer_percent.reshape(-1, 1)
+
+    plt.figure(figsize=(2.4, 8))
+    sns.set_theme(context="paper", font_scale=1.5, style="white")
+
+    ax = sns.heatmap(
+        data,
+        cmap="viridis",
+        annot=True,
+        fmt=".1f",
+        cbar=False,
+        yticklabels=[str(i+1) for i in range(num_layers)],
+        xticklabels=[model_name_map.get(model_prefix, model_prefix)]
+    )
+
+    # Append % symbol
+    for t in ax.texts:
+        t.set_text(t.get_text() + "%")
+
+    plt.ylabel("Layer")
+    plt.xlabel("")
+    plt.title(f"{model_prefix} – {percentage}% – {mask_type}")
+    plt.tight_layout()
+    plt.show()
+
+
+
+def main():
+    # You can freely change these lists
+    # models = ["llama3_1B", "llama3_3B", "gpt2_BASE"]
+    models = ["llama3_8B"]
+    mask_types = ["ttest_abs", "ttest_signed"]
+    percentage = 1.0 
+    pooling = "last"
+
+    for model_prefix in models:
+        for mask_type in mask_types:
+            print(f"\n=== Processing {model_prefix} [{mask_type}] {percentage}% ===")
+
+            try:
+                mask = load_mask(model_prefix, percentage, mask_type, pooling)
+            except FileNotFoundError as e:
+                print(f"  [!] Skip: {e}")
+                continue
+
+            plot_selectivity_heatmap(model_prefix, mask, mask_type, percentage)
+
+
+if __name__ == "__main__":
+    main()
