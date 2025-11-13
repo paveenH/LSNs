@@ -12,7 +12,8 @@ import numpy as np
 import argparse
 from models.factory import ModelFactory
 from datasets import LangLocDataset, TOMLocDataset, MDLocDataset
-from analysis.ttest_analyzer import TTestAnalyzer
+# from analysis.ttest_analyzer import TTestAnalyzer
+from analysis.ttest_paper_analyzer import TTestPaperAnalyzer
 from analysis.ttest_signed_analyzer import TTestSignedAnalyzer  
 from analysis.nmd_analyzer import NMDAnalyzer
 
@@ -83,7 +84,7 @@ def run_all_analyses(
         return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
 
     # --- (a) Absolute-value T-test ---
-    ttest_abs = TTestAnalyzer({"percentage": percentage, "localize_range": "100-100"})
+    ttest_abs = TTestPaperAnalyzer({"percentage": percentage, "localize_range": "100-100"})
     ttest_abs_mask, ttest_abs_meta = ttest_abs.analyze(positive, negative)
 
     # --- (b) Signed T-test ---

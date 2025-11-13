@@ -64,12 +64,9 @@ def plot_selectivity_heatmap(model_prefix, mask, mask_type, percentage):
     plt.ylabel("Layer")
     plt.xlabel("")
     plt.title(f"{model_prefix} – {percentage}% – {mask_type}")
-
     plt.tight_layout()
+    plt.show()
 
-    out_path = f"{CACHE_DIR}/heatmap_{model_prefix}_{int(percentage)}pct_{mask_type}.png"
-    plt.savefig(out_path, dpi=300)
-    print(f"> Saved: {out_path}")
 
 
 def main():
