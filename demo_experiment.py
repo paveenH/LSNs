@@ -68,15 +68,18 @@ def extract_data(model_name, network, pooling, batch_size):
 # ======================================================
 # STEP 2 — Run analyzers
 # ======================================================
-def run_all_analyses(positive, negative, layer_names, percentage=5.0, model_name="unknown", base_model="llama3", size="1B"):
+def run_all_analyses(
+        positive, negative, layer_names, percentage=5.0, 
+        model_name="unknown", base_model="llama3", size="1B"
+    ):
     print("[2] Running analysis methods...")
 
     cache_dir = "cache"
     os.makedirs(cache_dir, exist_ok=True)
 
-    # Helper: standardize filename prefix
-    def make_save_name(base_model: str, size: str, method: str) -> str:
-        base = f"{base_model.lower()}_{size.upper()}"
+    # Helper: filename builder
+    def make_save_name(base_model: str, size: str, pct: float, method: str) -> str:
+        base = f"{base_model.lower()}_{size.upper()}_{int(pct)}pct"
         return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
 
     # --- (a) Absolute-value T-test ---
@@ -96,12 +99,13 @@ def run_all_analyses(positive, negative, layer_names, percentage=5.0, model_name
     print(f"T-test (signed) selected:{ttest_signed_mask.sum()} neurons ({ttest_signed_meta['selection_ratio']:.3f})")
     print(f"NMD selected:             {nmd_mask.sum()} neurons ({nmd_meta['selection_ratio']:.3f})")
 
-    # --- Save ---
-    np.save(make_save_name(base_model, size, "ttest_abs"), ttest_abs_mask)
-    np.save(make_save_name(base_model, size, "ttest_signed"), ttest_signed_mask)
-    np.save(make_save_name(base_model, size, "nmd"), nmd_mask)
+    # --- Save (with percentage included) ---
+    np.save(make_save_name(base_model, size, percentage, "ttest_abs"), ttest_abs_mask)
+    np.save(make_save_name(base_model, size, percentage, "ttest_signed"), ttest_signed_mask)
+    np.save(make_save_name(base_model, size, percentage, "nmd"), nmd_mask)
 
-    print(f"Saved masks under {cache_dir}/ as {base_model}_{size}_*_mask.npy")
+    print(f"Saved masks to {cache_dir}/ as:")
+    print(f"  {base_model}_{size}_{int(percentage)}pct_*_mask.npy")
 
     return {
         "ttest_abs_mask": ttest_abs_mask,
