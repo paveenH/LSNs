@@ -73,7 +73,7 @@ def main():
     # You can freely change these lists
     # models = ["llama3_1B", "llama3_3B", "gpt2_BASE"]
     models = ["llama3_8B"]
-    mask_types = ["ttest_abs", "ttest_signed", "nmd"]
+    mask_types = ["ttest_abs", "ttest_signed"]
     percentage = 1 
 
     for model_prefix in models:
