@@ -18,13 +18,13 @@ from model_utils import model_name_map
 
 CACHE_DIR = "cache"
 
-def load_mask(model_prefix, percentage, mask_type):
+def load_mask(model_prefix, percentage, mask_type, pooling):
     """
     Load mask file with explicit mask type:
         <model_prefix>_<percentage>pct_<mask_type>_mask.npy
     """
 
-    filename = f"{model_prefix}_{int(percentage)}pct_{mask_type}_mask.npy"
+    filename = f"{model_prefix}_{str(percentage)}pct_{pooling}_{mask_type}_mask.npy"
     path = os.path.join(CACHE_DIR, filename)
 
     if not os.path.exists(path):
@@ -74,14 +74,15 @@ def main():
     # models = ["llama3_1B", "llama3_3B", "gpt2_BASE"]
     models = ["llama3_8B"]
     mask_types = ["ttest_abs", "ttest_signed"]
-    percentage = 1 
+    percentage = 1.0 
+    pooling = "last"
 
     for model_prefix in models:
         for mask_type in mask_types:
             print(f"\n=== Processing {model_prefix} [{mask_type}] {percentage}% ===")
 
             try:
-                mask = load_mask(model_prefix, percentage, mask_type)
+                mask = load_mask(model_prefix, percentage, mask_type, pooling)
             except FileNotFoundError as e:
                 print(f"  [!] Skip: {e}")
                 continue
