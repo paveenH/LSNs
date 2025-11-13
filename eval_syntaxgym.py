@@ -18,7 +18,7 @@ Evaluation metric:
 
 import os
 import numpy as np
-import datasets as hf_datasets
+from datasets import load_dataset
 import torch
 from models.factory import ModelFactory
 
@@ -137,7 +137,7 @@ def main():
     # ----------------------------------------------------------
     # Load SyntaxGym dataset
     # ----------------------------------------------------------
-    syntaxgym = hf_datasets.load_dataset("syntaxgym")
+    syntaxgym = load_dataset("syntaxgym")
     subtask_names = list(syntaxgym.keys())
 
     if args.limit_tasks:
