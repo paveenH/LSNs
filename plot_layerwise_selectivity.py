@@ -77,7 +77,8 @@ def plot_selectivity_heatmap(model_name, mask, mask_type):
 
 def main():
     # Models & mask types you want to draw
-    models = ["llama3_1B", "llama3_3B", "gpt2_BASE"]
+    # models = ["llama3_1B", "llama3_3B", "gpt2_BASE"]
+    models = ["llama3_8B"]
     mask_types = ["ttest_abs", "ttest_signed", "nmd"]   # customize here
 
     for model_prefix in models:
