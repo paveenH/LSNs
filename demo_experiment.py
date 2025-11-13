@@ -81,7 +81,7 @@ def run_all_analyses(
     # Helper: filename builder
     def make_save_name(cache_dir, base_model, size, pct, pooling, method):
         base = f"{base_model.lower()}_{size.upper()}_{pct}pct_{pooling}"
-        return os.path.join(cache_dir, f"{base}_{method}.npy")
+        return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
     
     # Helper for saving pos/neg mean
     def make_mean_name(cache_dir, base_model, size, pct, pooling, which):
