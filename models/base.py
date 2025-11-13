@@ -102,7 +102,6 @@ class BaseModel(ABC):
         self.logger.info(f"Registered {len(self._ablation_hooks)} ablation hooks")
     
     
-    
     def _remove_ablation_hooks(self):
         """Remove any registered ablation hooks."""
         if getattr(self, "_ablation_hooks", None):
