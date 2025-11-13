@@ -11,7 +11,7 @@ import torch
 import numpy as np
 import argparse
 from models.factory import ModelFactory
-from datasets import LangLocDataset, TOMLocDataset, MDLocDataset
+from datasets_loc import LangLocDataset, TOMLocDataset, MDLocDataset
 from analysis.ttest_analyzer import TTestAnalyzer
 from analysis.ttest_signed_analyzer import TTestSignedAnalyzer  
 from analysis.nmd_analyzer import NMDAnalyzer
