@@ -1,132 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Evaluate LLaMA with mask ablation on SyntaxGym minimal-pair tasks.
+Evaluate LLaMA with mask ablation on SyntaxGym tasks (region-level surprisal).
 
-Fully FIXED version for HuggingFace SyntaxGym:
-- Correct dataset loading
-- Group items by suite_name
-- Convert regions → sentences
-- Parse prediction inequalities
-- Evaluate baseline + ablation
+This version:
+- Uses HuggingFace dataset: cpllab/syntaxgym, config: all-2020
+- Groups items by suite_name
+- For each item:
+    * For each condition, computes region-level surprisal S[cond][region_number]
+    * Parses the SyntaxGym 'predictions' inequality expression
+    * Substitutes (k;%cond%) → S['cond'][k] and evaluates the expression
+- Accuracy = (# items where expression is True) / total
 
-Author: ChatGPT (fixed for Paveen)
+Requires:
+- BaseModel.score(text) to return:
+    {
+        "input_ids": [...],
+        "tokens": [...],
+        "offsets": [(start, end), ...],   # per token char span
+        "logprobs": [...],                # next-token logprobs, length = T-1
+        "mean_logprob": float
+    }
+
 """
 
 import os
+import re
 import numpy as np
 import torch
 from datasets import load_dataset
 from models.factory import ModelFactory
-import re
 
-# ============================================================
-# Utility: Compute avg logprob for a sentence
-# ============================================================
-def sentence_logprob(model, text: str):
-    try:
-        out = model.score(text)
-        logprobs = out["logprobs"]
-        return float(np.mean(logprobs))
-    except Exception as e:
-        print(f"[!] score() failed on: {text}")
-        print("Error:", e)
-        return float("-inf")
-
-
-# ============================================================
-# Build full sentences from SyntaxGym item
-# ============================================================
-def build_sentences_from_item(ex):
-    # ex["conditions"] is a dict
-    cond_names = ex["conditions"]["condition_name"]   # ['plaus', 'implaus']
-    sentences  = ex["conditions"]["content"]          # ['sentence1', 'sentence2']
-
-    return dict(zip(cond_names, sentences))
-
-
-# ============================================================
-# Parse SyntaxGym inequality
-# ============================================================
-def get_gold_condition(pred_str, available_conds):
-    """
-    Robust SyntaxGym inequality parser.
-    Handles patterns like:
-        ( (6;%plaus%) + (7;%plaus%) ) < ( (6;%implaus%) )
-    Even if right side contains fewer %cond% tokens.
-
-    Returns the condition that should have HIGHER logprob.
-    """
-
-    pred_str = pred_str.strip()
-
-    # Detect operator
-    if "<" in pred_str:
-        op = "<"
-        left, right = pred_str.split("<", 1)
-    elif ">" in pred_str:
-        op = ">"
-        left, right = pred_str.split(">", 1)
-    else:
-        print(f"[!] No < or > in prediction: {pred_str}")
-        return None
-
-    # Extract %cond% from both sides
-    left_conds  = re.findall(r"%([^%]+)%", left)
-    right_conds = re.findall(r"%([^%]+)%", right)
-
-    # Pick the first usable cond on each side
-    def pick_valid(lst):
-        for x in lst:
-            x = x.strip()
-            if x in available_conds:
-                return x
-        return None
-
-    L = pick_valid(left_conds)
-    R = pick_valid(right_conds)
-
-    if L is None or R is None:
-        print(f"[!] Cannot determine conds from: {pred_str}")
-        print("    left candidates :", left_conds)
-        print("    right candidates:", right_conds)
-        print("    valid conds     :", available_conds)
-        return None
-
-    # Interpret operator
-    if op == "<":
-        # left_surprisal < right_surprisal → left has higher logprob
-        return L
-    else:
-        # left_surprisal > right_surprisal → right has higher logprob
-        return R
-
-# ============================================================
-# Evaluate SyntaxGym items
-# ============================================================
-def eval_syntaxgym_task(task_dataset, model):
-    correct = 0
-    total = 0
-
-    for ex in task_dataset:
-        sentences = build_sentences_from_item(ex)
-
-        pred_str = ex["predictions"][0]
-        cond_names = ex["conditions"]["condition_name"]
-        gold_cond = get_gold_condition(pred_str, cond_names)
-
-        scores = {
-            cond: sentence_logprob(model, sent)
-            for cond, sent in sentences.items()
-        }
-
-        pred_cond = max(scores, key=scores.get)
-
-        if pred_cond == gold_cond:
-            correct += 1
-        total += 1
-
-    return (correct / total if total else 0.0), total
 
 # ============================================================
 # Mask loading
@@ -140,6 +44,103 @@ def load_mask(model, size, pct, pooling, method):
 
     print(f"Loaded mask: {path}")
     return np.load(path)
+
+
+# ============================================================
+# Region-level surprisal computation
+# ============================================================
+def compute_region_surprisals(ex, model):
+    cond_names = ex["conditions"]["condition_name"]
+    regions_per_cond = ex["conditions"]["regions"]   # list over conditions
+
+    S = {}  # cond_name -> {region_number: surprisal(float)}
+
+    for cond_idx, cond_name in enumerate(cond_names):
+        sentence = ex["conditions"]["content"][cond_idx]
+        region_info = regions_per_cond[cond_idx]
+        words = region_info["content"]            # ['The', 'painting', 'that', ...]
+        region_numbers = region_info["region_number"]  # [1, 2, 3, ..., N]
+
+        word_spans = []
+        pos = 0
+        for w in words:
+            start = sentence.find(w, pos)
+            if start == -1:
+                start = pos
+            end = start + len(w)
+            word_spans.append((start, end))
+            pos = end + 1
+
+        out = model.score(sentence)
+        logprobs = out["logprobs"]      # T-1
+        offsets = out["offsets"]        # T
+
+        word_surprisal = [0.0 for _ in words]
+
+        for tok_idx, (t_start, t_end) in enumerate(offsets):
+            if t_start == t_end:
+                continue
+
+            for w_idx, (w_start, w_end) in enumerate(word_spans):
+                if t_start >= w_start and t_end <= w_end:
+                    if tok_idx > 0 and (tok_idx - 1) < len(logprobs):
+                        lp = logprobs[tok_idx - 1]
+                        word_surprisal[w_idx] += -float(lp)   # surprisal = -log p
+                    break
+
+        cond_S = {}
+        for w_idx, r_id in enumerate(region_numbers):
+            cond_S[int(r_id)] = float(word_surprisal[w_idx])
+
+        S[cond_name] = cond_S
+
+    return S
+
+
+# ============================================================
+# Prediction evaluation
+# ============================================================
+def evaluate_prediction(pred_str, S):
+    def repl(m):
+        region = int(m.group(1))
+        cond = m.group(2)
+        return f"S['{cond}'][{region}]"
+
+    expr = re.sub(r"\((\d+);%([^%]+)%\)", repl, pred_str.strip())
+
+    try:
+        result = eval(expr, {"__builtins__": {}}, {"S": S})
+        if isinstance(result, bool):
+            return result
+        return bool(result)
+    except Exception as e:
+        print(f"[!] Failed to evaluate prediction: {pred_str}")
+        print(f"    Transformed expr: {expr}")
+        print(f"    Error: {e}")
+        return None
+
+
+# ============================================================
+# Evaluate SyntaxGym items (region-level)
+# ============================================================
+def eval_syntaxgym_task(task_dataset, model):
+    correct = 0
+    total = 0
+
+    for ex in task_dataset:
+        S = compute_region_surprisals(ex, model)
+        pred_str = ex["predictions"][0]
+
+        ok = evaluate_prediction(pred_str, S)
+        if ok is None:
+            continue
+
+        if ok:
+            correct += 1
+        total += 1
+
+    acc = correct / total if total > 0 else 0.0
+    return acc, total
 
 
 # ============================================================
