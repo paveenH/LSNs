@@ -3,25 +3,6 @@
 """
 Evaluate LLaMA with mask ablation on SyntaxGym tasks (region-level surprisal).
 
-This version:
-- Uses HuggingFace dataset: cpllab/syntaxgym, config: all-2020
-- Groups items by suite_name
-- For each item:
-    * For each condition, computes region-level surprisal S[cond][region_number]
-    * Parses the SyntaxGym 'predictions' inequality expression
-    * Substitutes (k;%cond%) → S['cond'][k] and evaluates the expression
-- Accuracy = (# items where expression is True) / total
-
-Requires:
-- BaseModel.score(text) to return:
-    {
-        "input_ids": [...],
-        "tokens": [...],
-        "offsets": [(start, end), ...],   # per token char span
-        "logprobs": [...],                # next-token logprobs, length = T-1
-        "mean_logprob": float
-    }
-
 """
 
 import os
@@ -29,8 +10,8 @@ import re
 import numpy as np
 import torch
 from datasets import load_dataset
+from collections import defaultdict
 from models.factory import ModelFactory
-
 
 # ============================================================
 # Mask loading
@@ -140,15 +121,7 @@ def compute_region_surprisals(ex, model):
 # ============================================================
 def evaluate_prediction(pred_str, S):
     """
-    Evaluate a SyntaxGym prediction expression, e.g.:
-
-        ((6;%plaus%) + (7;%plaus%)) < ((6;%implaus%) + (7;%implaus%))
-
-    After replacement:
-        ((S['plaus'][6] + S['plaus'][7])) < ((S['implaus'][6] + S['implaus'][7]))
-
-    Returns:
-        True / False / None (if evaluation fails)
+    Evaluate a SyntaxGym prediction expression
     """
 
     def repl(m):
@@ -245,7 +218,6 @@ def main():
     raw_data = load_dataset("cpllab/syntaxgym", "all-2020")
     all_items = raw_data["test"]
 
-    from collections import defaultdict
     subtasks = defaultdict(list)
     for ex in all_items:
         subtasks[ex["suite_name"]].append(ex)
@@ -304,7 +276,7 @@ def main():
     # 3) Save results to CSV
     # ----------------------------------------------------------
     df = pd.DataFrame(results)
-    out_name = f"syntaxgym_results_{args.model}_{args.size}_{args.pct}.csv"
+    out_name = f"cache/syntaxgym_results_{args.model}_{args.size}_{args.pct}.csv"
     df.to_csv(out_name, index=False)
 
     print("\n========================================")
