@@ -66,24 +66,20 @@ def get_gold_condition(pred_str, available_conds):
     - deduplicate in order and intersect with available_conds
     """
 
-    # 1) 判断是 < 还是 >
     if "<" in pred_str:
         op = "<"
     elif ">" in pred_str:
         op = ">"
     else:
-        # 无法解析的情况
         print(f"[!] Cannot find < or > in prediction: {pred_str}")
         return None
 
-    # 2) 提取所有 %cond% 里的 cond 名
     conds = re.findall(r"%([^%]+)%", pred_str)  # ['plaus', 'plaus', 'implaus', 'implaus'] 等
 
     if not conds:
         print(f"[!] No %cond% pattern found in prediction: {pred_str}")
         return None
 
-    # 3) 去重，同时只保留当前 item 里真正存在的 condition
     seen = set()
     uniq = []
     for c in conds:
@@ -96,12 +92,9 @@ def get_gold_condition(pred_str, available_conds):
         print(f"[!] No usable condition names found in prediction: {pred_str}")
         return None
     if len(uniq) == 1:
-        # 只有一个条件名，勉强返回这个（大多数任务不会这样）
         return uniq[0]
-    # 正常情况，取前两个
     cond1, cond2 = uniq[0], uniq[1]
 
-    # 4) 根据不等式方向决定 gold condition
     if op == "<":
         # cond1_surprisal < cond2_surprisal → cond1 logprob 更大
         return cond1
@@ -117,21 +110,17 @@ def eval_syntaxgym_task(task_dataset, model):
     total = 0
 
     for ex in task_dataset:
-
         sentences = build_sentences_from_item(ex)
 
-        # prediction list (usually length=1)
-        pred_str = ex["predictions"][0]        
+        pred_str = ex["predictions"][0]
         cond_names = ex["conditions"]["condition_name"]
         gold_cond = get_gold_condition(pred_str, cond_names)
 
-        # compute scores for all sentences
         scores = {
             cond: sentence_logprob(model, sent)
             for cond, sent in sentences.items()
         }
 
-        # choose highest logprob
         pred_cond = max(scores, key=scores.get)
 
         if pred_cond == gold_cond:
@@ -139,7 +128,6 @@ def eval_syntaxgym_task(task_dataset, model):
         total += 1
 
     return (correct / total if total else 0.0), total
-
 
 # ============================================================
 # Mask loading
