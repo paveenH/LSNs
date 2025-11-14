@@ -50,50 +50,56 @@ def build_sentences_from_item(ex):
 # ============================================================
 def get_gold_condition(pred_str, available_conds):
     """
-    Robustly parse SyntaxGym inequality to decide which condition
-    should have higher logprob (i.e., lower surprisal).
+    Robust SyntaxGym inequality parser.
+    Handles patterns like:
+        ( (6;%plaus%) + (7;%plaus%) ) < ( (6;%implaus%) )
+    Even if right side contains fewer %cond% tokens.
 
-    We:
-    - detect operator (< or >)
-    - extract all %cond% occurrences
-    - deduplicate in order and intersect with available_conds
+    Returns the condition that should have HIGHER logprob.
     """
 
+    pred_str = pred_str.strip()
+
+    # Detect operator
     if "<" in pred_str:
         op = "<"
+        left, right = pred_str.split("<", 1)
     elif ">" in pred_str:
         op = ">"
+        left, right = pred_str.split(">", 1)
     else:
-        print(f"[!] Cannot find < or > in prediction: {pred_str}")
+        print(f"[!] No < or > in prediction: {pred_str}")
         return None
 
-    conds = re.findall(r"%([^%]+)%", pred_str)  # ['plaus', 'plaus', 'implaus', 'implaus'] 等
+    # Extract %cond% from both sides
+    left_conds  = re.findall(r"%([^%]+)%", left)
+    right_conds = re.findall(r"%([^%]+)%", right)
 
-    if not conds:
-        print(f"[!] No %cond% pattern found in prediction: {pred_str}")
+    # Pick the first usable cond on each side
+    def pick_valid(lst):
+        for x in lst:
+            x = x.strip()
+            if x in available_conds:
+                return x
         return None
 
-    seen = set()
-    uniq = []
-    for c in conds:
-        c = c.strip()
-        if c in available_conds and c not in seen:
-            seen.add(c)
-            uniq.append(c)
+    L = pick_valid(left_conds)
+    R = pick_valid(right_conds)
 
-    if len(uniq) == 0:
-        print(f"[!] No usable condition names found in prediction: {pred_str}")
+    if L is None or R is None:
+        print(f"[!] Cannot determine conds from: {pred_str}")
+        print("    left candidates :", left_conds)
+        print("    right candidates:", right_conds)
+        print("    valid conds     :", available_conds)
         return None
-    if len(uniq) == 1:
-        return uniq[0]
-    cond1, cond2 = uniq[0], uniq[1]
 
+    # Interpret operator
     if op == "<":
-        # cond1_surprisal < cond2_surprisal → cond1 logprob
-        return cond1
-    else:  # op == ">"
-        # cond1_surprisal > cond2_surprisal → cond2 logprob
-        return cond2
+        # left_surprisal < right_surprisal → left has higher logprob
+        return L
+    else:
+        # left_surprisal > right_surprisal → right has higher logprob
+        return R
 
 # ============================================================
 # Evaluate SyntaxGym items
