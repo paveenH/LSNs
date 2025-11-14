@@ -50,47 +50,85 @@ def load_mask(model, size, pct, pooling, method):
 # Region-level surprisal computation
 # ============================================================
 def compute_region_surprisals(ex, model):
+    """
+    For one SyntaxGym item:
+        - For each condition, compute surprisal per region_number.
+        - Surprisal(region k) = sum_{tokens in region k} -log p(token_t | prefix).
+
+    Returns:
+        S: dict
+            cond_name -> { region_number(int): surprisal(float) }
+    """
     cond_names = ex["conditions"]["condition_name"]
-    regions_per_cond = ex["conditions"]["regions"]   # list over conditions
+    regions_per_cond = ex["conditions"]["regions"]       # list over conditions
+    contents_per_cond = ex["conditions"]["content"]      # full sentences per cond
 
     S = {}  # cond_name -> {region_number: surprisal(float)}
 
     for cond_idx, cond_name in enumerate(cond_names):
-        sentence = ex["conditions"]["content"][cond_idx]
+        sentence = contents_per_cond[cond_idx]
         region_info = regions_per_cond[cond_idx]
-        words = region_info["content"]            # ['The', 'painting', 'that', ...]
-        region_numbers = region_info["region_number"]  # [1, 2, 3, ..., N]
 
-        word_spans = []
+        region_texts = region_info["content"]            # e.g. ['The', 'painting', 'that', ...]
+        region_numbers = region_info["region_number"]    # e.g. [1, 2, 3, ..., N]
+
+        # --------------------------------------------------
+        # 1) Compute char-span for each region (in sentence)
+        #    region_spans[i] = (start_char, end_char) for region i
+        # --------------------------------------------------
+        region_spans = []
         pos = 0
-        for w in words:
-            start = sentence.find(w, pos)
+        for chunk in region_texts:
+            chunk = str(chunk)
+            start = sentence.find(chunk, pos)
             if start == -1:
-                start = pos
-            end = start + len(w)
-            word_spans.append((start, end))
-            pos = end + 1
+                # Fallback: try from beginning; if still -1, approximate with pos
+                start = sentence.find(chunk)
+                if start == -1:
+                    start = pos
+            end = start + len(chunk)
+            region_spans.append((start, end))
+            # move pos to end to avoid matching earlier occurrences
+            pos = end
 
-        out = model.score(sentence)
-        logprobs = out["logprobs"]      # T-1
-        offsets = out["offsets"]        # T
+        # --------------------------------------------------
+        # 2) Get token-level logprobs & offsets from model
+        # --------------------------------------------------
+        try:
+            out = model.score(sentence)
+        except Exception as e:
+            print(f"[!] score() failed on sentence: {sentence}")
+            print("    Error:", e)
+            # skip this condition (very rare)
+            continue
 
-        word_surprisal = [0.0 for _ in words]
+        logprobs = out["logprobs"]   # length T-1
+        offsets = out["offsets"]     # length T (one span per token)
+
+        # --------------------------------------------------
+        # 3) Aggregate surprisal per region
+        # --------------------------------------------------
+        # initialize region surprisal dict
+        cond_S = {int(r): 0.0 for r in region_numbers}
 
         for tok_idx, (t_start, t_end) in enumerate(offsets):
+            # some tokenizers may produce empty spans
             if t_start == t_end:
                 continue
 
-            for w_idx, (w_start, w_end) in enumerate(word_spans):
-                if t_start >= w_start and t_end <= w_end:
-                    if tok_idx > 0 and (tok_idx - 1) < len(logprobs):
-                        lp = logprobs[tok_idx - 1]
-                        word_surprisal[w_idx] += -float(lp)   # surprisal = -log p
-                    break
+            # token 0 has no next-token logprob (we use next-token prediction)
+            if tok_idx == 0 or (tok_idx - 1) >= len(logprobs):
+                continue
 
-        cond_S = {}
-        for w_idx, r_id in enumerate(region_numbers):
-            cond_S[int(r_id)] = float(word_surprisal[w_idx])
+            lp = logprobs[tok_idx - 1]
+            surpr = -float(lp)  # surprisal = -log p(token_t | prefix)
+
+            # assign this token to the first region whose span fully covers it
+            for r_idx, (r_start, r_end) in enumerate(region_spans):
+                if t_start >= r_start and t_end <= r_end:
+                    region_id = int(region_numbers[r_idx])
+                    cond_S[region_id] += surpr
+                    break
 
         S[cond_name] = cond_S
 
@@ -101,6 +139,18 @@ def compute_region_surprisals(ex, model):
 # Prediction evaluation
 # ============================================================
 def evaluate_prediction(pred_str, S):
+    """
+    Evaluate a SyntaxGym prediction expression, e.g.:
+
+        ((6;%plaus%) + (7;%plaus%)) < ((6;%implaus%) + (7;%implaus%))
+
+    After replacement:
+        ((S['plaus'][6] + S['plaus'][7])) < ((S['implaus'][6] + S['implaus'][7]))
+
+    Returns:
+        True / False / None (if evaluation fails)
+    """
+
     def repl(m):
         region = int(m.group(1))
         cond = m.group(2)
@@ -133,6 +183,7 @@ def eval_syntaxgym_task(task_dataset, model):
 
         ok = evaluate_prediction(pred_str, S)
         if ok is None:
+            # skip items where the expression could not be evaluated
             continue
 
         if ok:
