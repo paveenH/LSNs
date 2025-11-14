@@ -18,7 +18,7 @@ import numpy as np
 import torch
 from datasets import load_dataset
 from models.factory import ModelFactory
-
+import re
 
 # ============================================================
 # Utility: Compute avg logprob for a sentence
@@ -55,28 +55,59 @@ def build_sentences_from_item(ex):
 # If prediction is   match < mismatch
 # → mismatch must have higher surprisal → match is correct answer.
 # ============================================================
-def get_gold_condition(pred_str):
+def get_gold_condition(pred_str, available_conds):
     """
-    Parse SyntaxGym inequality.
-    Example:
-    '( (6;%plaus%) + (7;%plaus%) ) < ( (6;%implaus%) + (7;%implaus%) )'
+    Robustly parse SyntaxGym inequality to decide which condition
+    should have higher logprob (i.e., lower surprisal).
+
+    We:
+    - detect operator (< or >)
+    - extract all %cond% occurrences
+    - deduplicate in order and intersect with available_conds
     """
+
+    # 1) 判断是 < 还是 >
     if "<" in pred_str:
-        left, right = pred_str.split("<")
-        left_cond = left.split("%")[1]
-        right_cond = right.split("%")[1]
-        # left_surprisal < right_surprisal → left has higher logprob
-        return left_cond.strip()
+        op = "<"
+    elif ">" in pred_str:
+        op = ">"
+    else:
+        # 无法解析的情况
+        print(f"[!] Cannot find < or > in prediction: {pred_str}")
+        return None
 
-    if ">" in pred_str:
-        left, right = pred_str.split(">")
-        left_cond = left.split("%")[1]
-        right_cond = right.split("%")[1]
-        # left_surprisal > right_surprisal → right has higher logprob
-        return right_cond.strip()
+    # 2) 提取所有 %cond% 里的 cond 名
+    conds = re.findall(r"%([^%]+)%", pred_str)  # ['plaus', 'plaus', 'implaus', 'implaus'] 等
 
-    raise ValueError(f"Unsupported prediction: {pred_str}")
+    if not conds:
+        print(f"[!] No %cond% pattern found in prediction: {pred_str}")
+        return None
 
+    # 3) 去重，同时只保留当前 item 里真正存在的 condition
+    seen = set()
+    uniq = []
+    for c in conds:
+        c = c.strip()
+        if c in available_conds and c not in seen:
+            seen.add(c)
+            uniq.append(c)
+
+    if len(uniq) == 0:
+        print(f"[!] No usable condition names found in prediction: {pred_str}")
+        return None
+    if len(uniq) == 1:
+        # 只有一个条件名，勉强返回这个（大多数任务不会这样）
+        return uniq[0]
+    # 正常情况，取前两个
+    cond1, cond2 = uniq[0], uniq[1]
+
+    # 4) 根据不等式方向决定 gold condition
+    if op == "<":
+        # cond1_surprisal < cond2_surprisal → cond1 logprob 更大
+        return cond1
+    else:  # op == ">"
+        # cond1_surprisal > cond2_surprisal → cond2 logprob 更大
+        return cond2
 
 # ============================================================
 # Evaluate SyntaxGym items
@@ -90,8 +121,9 @@ def eval_syntaxgym_task(task_dataset, model):
         sentences = build_sentences_from_item(ex)
 
         # prediction list (usually length=1)
-        pred_str = ex["predictions"][0]
-        gold_cond = get_gold_condition(pred_str)
+        pred_str = ex["predictions"][0]        
+        cond_names = ex["conditions"]["condition_name"]
+        gold_cond = get_gold_condition(pred_str, cond_names)
 
         # compute scores for all sentences
         scores = {
