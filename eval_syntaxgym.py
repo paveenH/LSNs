@@ -38,21 +38,11 @@ def sentence_logprob(model, text: str):
 # Build full sentences from SyntaxGym item
 # ============================================================
 def build_sentences_from_item(ex):
-    """
-    ex["conditions"] = ["match_sing", "mismatch_sing", ...]
-    ex["content"] = [ [ {region}, {region} ... ],  # for cond1
-                      [ {region}, {region} ... ],  # for cond2
-                    ]
-    """
-    cond_names = ex["conditions"]
-    cond_sentences = {}
+    # ex["conditions"] is a dict
+    cond_names = ex["conditions"]["condition_name"]   # ['plaus', 'implaus']
+    sentences  = ex["conditions"]["content"]          # ['sentence1', 'sentence2']
 
-    for cond, region_list in zip(cond_names, ex["content"]):
-        # Each region_list is a list of dicts: {"region_number": X, "content": "..."}
-        sent = " ".join([r["content"] for r in region_list])
-        cond_sentences[cond] = sent
-
-    return cond_sentences
+    return dict(zip(cond_names, sentences))
 
 
 # ============================================================
@@ -66,7 +56,11 @@ def build_sentences_from_item(ex):
 # → mismatch must have higher surprisal → match is correct answer.
 # ============================================================
 def get_gold_condition(pred_str):
-    """Return the condition name that should have the highest logprob."""
+    """
+    Parse SyntaxGym inequality.
+    Example:
+    '( (6;%plaus%) + (7;%plaus%) ) < ( (6;%implaus%) + (7;%implaus%) )'
+    """
     if "<" in pred_str:
         left, right = pred_str.split("<")
         left_cond = left.split("%")[1]
@@ -87,32 +81,32 @@ def get_gold_condition(pred_str):
 # ============================================================
 # Evaluate SyntaxGym items
 # ============================================================
-def eval_syntaxgym_task(item_list, model):
+def eval_syntaxgym_task(task_dataset, model):
     correct = 0
     total = 0
 
-    for ex in item_list:
+    for ex in task_dataset:
+
         sentences = build_sentences_from_item(ex)
 
         # prediction list (usually length=1)
         pred_str = ex["predictions"][0]
         gold_cond = get_gold_condition(pred_str)
 
-        # compute scores
+        # compute scores for all sentences
         scores = {
             cond: sentence_logprob(model, sent)
             for cond, sent in sentences.items()
         }
 
+        # choose highest logprob
         pred_cond = max(scores, key=scores.get)
 
         if pred_cond == gold_cond:
             correct += 1
-
         total += 1
 
-    acc = correct / total if total > 0 else 0.0
-    return acc, total
+    return (correct / total if total else 0.0), total
 
 
 # ============================================================
