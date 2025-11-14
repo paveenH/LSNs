@@ -46,14 +46,7 @@ def build_sentences_from_item(ex):
 
 
 # ============================================================
-# Parse SyntaxGym inequality like:
-# "( (6;%match%) + (7;%match%) ) < ( (6;%mismatch%) )"
-#
-# For minimal-pair classification, we only need:
-#   which condition should have *higher* logprob (lower surprisal)
-#
-# If prediction is   match < mismatch
-# → mismatch must have higher surprisal → match is correct answer.
+# Parse SyntaxGym inequality
 # ============================================================
 def get_gold_condition(pred_str, available_conds):
     """
@@ -96,10 +89,10 @@ def get_gold_condition(pred_str, available_conds):
     cond1, cond2 = uniq[0], uniq[1]
 
     if op == "<":
-        # cond1_surprisal < cond2_surprisal → cond1 logprob 更大
+        # cond1_surprisal < cond2_surprisal → cond1 logprob
         return cond1
     else:  # op == ">"
-        # cond1_surprisal > cond2_surprisal → cond2 logprob 更大
+        # cond1_surprisal > cond2_surprisal → cond2 logprob
         return cond2
 
 # ============================================================
