@@ -269,10 +269,10 @@ def main():
     model.set_language_selective_mask(None)
 
     baseline_scores = {}
-    for name in subtask_names:
-        acc, n = eval_syntaxgym_task(subtasks[name], model)
-        baseline_scores[name] = acc
-        print(f"{name:25s} ACC={acc:.3f} (n={n})")
+    # for name in subtask_names:
+    #     acc, n = eval_syntaxgym_task(subtasks[name], model)
+    #     baseline_scores[name] = acc
+    #     print(f"{name:25s} ACC={acc:.3f} (n={n})")
 
     results["baseline"] = baseline_scores
 
