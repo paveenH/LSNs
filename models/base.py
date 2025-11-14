@@ -232,50 +232,52 @@ class BaseModel(ABC):
     def score(self, text: str) -> Dict[str, Any]:
         """
         Compute per-token logprobs for a given sentence.
-        Used for SyntaxGym evaluation.
-
-        Returns:
-            {
-                "logprobs": List[float],   # per-token logprob
-                "mean_logprob": float      # avg logprob over tokens
-            }
+        Extended version for SyntaxGym:
+            - returns tokens
+            - returns input_ids
+            - returns per-token logprobs
         """
         # Tokenize
         enc = self.tokenizer(
             text,
             return_tensors="pt",
-            add_special_tokens=False
+            add_special_tokens=False,
+            return_offsets_mapping=True  # for aligning regions in future
         ).to(self.device)
 
-        input_ids = enc["input_ids"]  # shape: [1, T]
+        input_ids = enc["input_ids"]          # [1, T]
         attention_mask = enc.get("attention_mask", None)
+        offsets = enc["offset_mapping"][0]    # list of (start, end)
 
-        # Forward pass (this triggers ablation hooks)
+        # forward (with ablation hooks)
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask
         )
 
-        logits = outputs.logits  # shape: [1, T, vocab]
+        logits = outputs.logits               # [1, T, vocab]
 
-        # Compute logprobs of next-token prediction
-        # Shift logits & labels by 1 position
-        shift_logits = logits[:, :-1, :]         # [1, T-1, vocab]
-        shift_labels = input_ids[:, 1:]          # [1, T-1]
+        # next-token log-prob
+        shift_logits = logits[:, :-1, :]
+        shift_labels = input_ids[:, 1:]
 
-        # log softmax
         logprobs = torch.log_softmax(shift_logits, dim=-1)
 
-        # Gather logprob of the true next-token for each position
         token_logprobs = logprobs.gather(
             dim=-1,
             index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)  # shape: [1, T-1]
+        ).squeeze(-1).squeeze(0)              # [T-1]
 
-        token_logprobs = token_logprobs.squeeze(0)  # [T-1]
+        # decode tokens (for SyntaxGym region-span alignment)
+        tokens = self.tokenizer.convert_ids_to_tokens(
+            input_ids[0].tolist()
+        )
 
-        out = {
-            "logprobs": token_logprobs.detach().cpu().tolist(),
+        return {
+            "input_ids": input_ids[0].tolist(),
+            "tokens": tokens,
+            "offsets": [(int(a), int(b)) for a, b in offsets],
+            "logprobs": token_logprobs.cpu().tolist(),
             "mean_logprob": float(token_logprobs.mean().item())
         }
-        return out
+
