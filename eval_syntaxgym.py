@@ -199,13 +199,15 @@ def eval_syntaxgym_task(task_dataset, model):
 # ============================================================
 def main():
     import argparse
+    import pandas as pd
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--model", type=str, default="llama3")
     parser.add_argument("--size", type=str, default="8B")
     parser.add_argument("--pct", type=float, default=0.5)
     parser.add_argument("--pooling", type=str, default="last")
-    parser.add_argument("--method", type=str, default="nmd")
+    parser.add_argument("--method", nargs="+", type=str, default=["nmd"])
+    parser.add_argument("--baseline", action="store_true", default=False)
     parser.add_argument("--limit_tasks", type=int, default=None)
 
     args = parser.parse_args()
@@ -221,7 +223,9 @@ def main():
 
     print("========================================")
     print(f"Model: {model_path}")
-    print(f"Mask : {args.pct}pct, {args.pooling}, {args.method}")
+    print(f"Methods: {args.method}")
+    print(f"Mask pct: {args.pct} | pooling={args.pooling}")
+    print(f"Evaluate baseline: {args.baseline}")
     print("========================================")
 
     # ----------------------------------------------------------
@@ -234,25 +238,19 @@ def main():
     device = model.device
     model.model.eval()
 
-    # Load mask
-    mask = load_mask(args.model, args.size, args.pct, args.pooling, args.method)
-    mask_tensor = torch.tensor(1.0 - mask, dtype=torch.float16, device=device)
-
     # ----------------------------------------------------------
     # Load SyntaxGym
     # ----------------------------------------------------------
     print("Loading SyntaxGym...")
     raw_data = load_dataset("cpllab/syntaxgym", "all-2020")
-    all_items = raw_data["test"]   # ONLY one split!
+    all_items = raw_data["test"]
 
-    # group items by suite_name
     from collections import defaultdict
     subtasks = defaultdict(list)
     for ex in all_items:
         subtasks[ex["suite_name"]].append(ex)
 
     subtask_names = sorted(subtasks.keys())
-
     if args.limit_tasks:
         subtask_names = subtask_names[:args.limit_tasks]
 
@@ -260,52 +258,58 @@ def main():
     for name in subtask_names:
         print(" -", name)
 
-    results = {}
+    # ----------------------------------------------------------
+    # Result collector
+    # ----------------------------------------------------------
+    results = { "subtask": subtask_names }
 
     # ----------------------------------------------------------
     # 1) Baseline
     # ----------------------------------------------------------
-    print("\n=== Baseline Evaluation ===")
-    model.set_language_selective_mask(None)
+    if args.baseline:
+        print("\n=== Baseline Evaluation ===")
+        model.set_language_selective_mask(None)
 
-    baseline_scores = {}
-    # for name in subtask_names:
-    #     acc, n = eval_syntaxgym_task(subtasks[name], model)
-    #     baseline_scores[name] = acc
-    #     print(f"{name:25s} ACC={acc:.3f} (n={n})")
+        baseline_scores = {}
+        for name in subtask_names:
+            acc, n = eval_syntaxgym_task(subtasks[name], model)
+            baseline_scores[name] = acc
+            print(f"{name:25s} ACC={acc:.3f} (n={n})")
 
-    results["baseline"] = baseline_scores
-
-    # ----------------------------------------------------------
-    # 2) Ablation
-    # ----------------------------------------------------------
-    print(f"\n=== Ablation: {args.method} ===")
-    model.set_language_selective_mask(mask_tensor)
-
-    ablation_scores = {}
-    for name in subtask_names:
-        acc, n = eval_syntaxgym_task(subtasks[name], model)
-        ablation_scores[name] = acc
-        print(f"{name:25s} ACC={acc:.3f} (n={n})")
-
-    results["ablation"] = ablation_scores
+        results["baseline"] = [baseline_scores[n] for n in subtask_names]
 
     # ----------------------------------------------------------
-    # 3) Summary
+    # 2) Evaluate each method
     # ----------------------------------------------------------
+    for method in args.method:
+
+        print(f"\n=== Ablation: {method} ===")
+
+        # load mask
+        mask = load_mask(args.model, args.size, args.pct, args.pooling, method)
+        mask_tensor = torch.tensor(1.0 - mask, dtype=torch.float16, device=device)
+
+        # apply mask
+        model.set_language_selective_mask(mask_tensor)
+
+        method_scores = {}
+        for name in subtask_names:
+            acc, n = eval_syntaxgym_task(subtasks[name], model)
+            method_scores[name] = acc
+            print(f"{name:25s} ACC={acc:.3f} (n={n})")
+
+        results[method] = [method_scores[n] for n in subtask_names]
+
+    # ----------------------------------------------------------
+    # 3) Save results to CSV
+    # ----------------------------------------------------------
+    df = pd.DataFrame(results)
+    out_name = f"syntaxgym_results_{args.model}_{args.size}_{args.pct}.csv"
+    df.to_csv(out_name, index=False)
+
     print("\n========================================")
-    print("Summary:")
-    print("Subtask                     | Baseline | Ablation | Δ")
-    print("----------------------------------------")
-
-    for name in subtask_names:
-        b = results["baseline"][name]
-        a = results["ablation"][name]
-        print(f"{name:25s}  {b:6.3f}   {a:6.3f}   {a-b:+6.3f}")
-
+    print("Saved results to:", out_name)
     print("========================================")
-    print("Done.")
-
 
 if __name__ == "__main__":
     main()
