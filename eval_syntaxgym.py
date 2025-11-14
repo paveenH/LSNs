@@ -3,12 +3,14 @@
 """
 Evaluate LLaMA with mask ablation on SyntaxGym minimal-pair tasks.
 
-Supports baseline + NMD + T-test ablations.
-Dataset: HuggingFace cpllab/syntaxgym
+Fully FIXED version for HuggingFace SyntaxGym:
+- Correct dataset loading
+- Group items by suite_name
+- Convert regions → sentences
+- Parse prediction inequalities
+- Evaluate baseline + ablation
 
-Evaluation:
-For each item, choose the highest mean-logprob sentence.
-Accuracy = (# correct) / total
+Author: ChatGPT (fixed for Paveen)
 """
 
 import os
@@ -33,21 +35,80 @@ def sentence_logprob(model, text: str):
 
 
 # ============================================================
-# Evaluate one SyntaxGym subtask
+# Build full sentences from SyntaxGym item
 # ============================================================
-def eval_syntaxgym_task(task_dataset, model):
+def build_sentences_from_item(ex):
+    """
+    ex["conditions"] = ["match_sing", "mismatch_sing", ...]
+    ex["content"] = [ [ {region}, {region} ... ],  # for cond1
+                      [ {region}, {region} ... ],  # for cond2
+                    ]
+    """
+    cond_names = ex["conditions"]
+    cond_sentences = {}
+
+    for cond, region_list in zip(cond_names, ex["content"]):
+        # Each region_list is a list of dicts: {"region_number": X, "content": "..."}
+        sent = " ".join([r["content"] for r in region_list])
+        cond_sentences[cond] = sent
+
+    return cond_sentences
+
+
+# ============================================================
+# Parse SyntaxGym inequality like:
+# "( (6;%match%) + (7;%match%) ) < ( (6;%mismatch%) )"
+#
+# For minimal-pair classification, we only need:
+#   which condition should have *higher* logprob (lower surprisal)
+#
+# If prediction is   match < mismatch
+# → mismatch must have higher surprisal → match is correct answer.
+# ============================================================
+def get_gold_condition(pred_str):
+    """Return the condition name that should have the highest logprob."""
+    if "<" in pred_str:
+        left, right = pred_str.split("<")
+        left_cond = left.split("%")[1]
+        right_cond = right.split("%")[1]
+        # left_surprisal < right_surprisal → left has higher logprob
+        return left_cond.strip()
+
+    if ">" in pred_str:
+        left, right = pred_str.split(">")
+        left_cond = left.split("%")[1]
+        right_cond = right.split("%")[1]
+        # left_surprisal > right_surprisal → right has higher logprob
+        return right_cond.strip()
+
+    raise ValueError(f"Unsupported prediction: {pred_str}")
+
+
+# ============================================================
+# Evaluate SyntaxGym items
+# ============================================================
+def eval_syntaxgym_task(item_list, model):
     correct = 0
     total = 0
 
-    for ex in task_dataset:
-        sentences = ex["conditioned_sentences"]
-        gold_idx = ex["targets"]
+    for ex in item_list:
+        sentences = build_sentences_from_item(ex)
 
-        scores = [sentence_logprob(model, s) for s in sentences]
-        pred = int(np.argmax(scores))
+        # prediction list (usually length=1)
+        pred_str = ex["predictions"][0]
+        gold_cond = get_gold_condition(pred_str)
 
-        if pred == gold_idx:
+        # compute scores
+        scores = {
+            cond: sentence_logprob(model, sent)
+            for cond, sent in sentences.items()
+        }
+
+        pred_cond = max(scores, key=scores.get)
+
+        if pred_cond == gold_cond:
             correct += 1
+
         total += 1
 
     acc = correct / total if total > 0 else 0.0
@@ -69,7 +130,7 @@ def load_mask(model, size, pct, pooling, method):
 
 
 # ============================================================
-# Main Evaluation
+# Main
 # ============================================================
 def main():
     import argparse
@@ -113,18 +174,24 @@ def main():
     mask_tensor = torch.tensor(1.0 - mask, dtype=torch.float16, device=device)
 
     # ----------------------------------------------------------
-    # Load SyntaxGym from HuggingFace
+    # Load SyntaxGym
     # ----------------------------------------------------------
     print("Loading SyntaxGym...")
-    all_subtasks = load_dataset("cpllab/syntaxgym", "all-2020")
+    raw_data = load_dataset("cpllab/syntaxgym", "all-2020")
+    all_items = raw_data["test"]   # ONLY one split!
 
-    # The dataset contains multiple subtasks as separate splits
-    subtask_names = list(all_subtasks.keys())
+    # group items by suite_name
+    from collections import defaultdict
+    subtasks = defaultdict(list)
+    for ex in all_items:
+        subtasks[ex["suite_name"]].append(ex)
+
+    subtask_names = sorted(subtasks.keys())
 
     if args.limit_tasks:
         subtask_names = subtask_names[:args.limit_tasks]
 
-    print("SyntaxGym subtasks:")
+    print("Found SyntaxGym subtasks:")
     for name in subtask_names:
         print(" -", name)
 
@@ -138,7 +205,7 @@ def main():
 
     baseline_scores = {}
     for name in subtask_names:
-        acc, n = eval_syntaxgym_task(all_subtasks[name], model)
+        acc, n = eval_syntaxgym_task(subtasks[name], model)
         baseline_scores[name] = acc
         print(f"{name:25s} ACC={acc:.3f} (n={n})")
 
@@ -152,7 +219,7 @@ def main():
 
     ablation_scores = {}
     for name in subtask_names:
-        acc, n = eval_syntaxgym_task(all_subtasks[name], model)
+        acc, n = eval_syntaxgym_task(subtasks[name], model)
         ablation_scores[name] = acc
         print(f"{name:25s} ACC={acc:.3f} (n={n})")
 
