@@ -227,3 +227,55 @@ class BaseModel(ABC):
     def __str__(self) -> str:
         """String representation of the model."""
         return f"{self.__class__.__name__}(path={self.model_path}, layers={self.num_layers}, hidden={self.hidden_size})" 
+    
+    @torch.no_grad()
+    def score(self, text: str) -> Dict[str, Any]:
+        """
+        Compute per-token logprobs for a given sentence.
+        Used for SyntaxGym evaluation.
+
+        Returns:
+            {
+                "logprobs": List[float],   # per-token logprob
+                "mean_logprob": float      # avg logprob over tokens
+            }
+        """
+        # Tokenize
+        enc = self.tokenizer(
+            text,
+            return_tensors="pt",
+            add_special_tokens=False
+        ).to(self.device)
+
+        input_ids = enc["input_ids"]  # shape: [1, T]
+        attention_mask = enc.get("attention_mask", None)
+
+        # Forward pass (this triggers ablation hooks)
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+
+        logits = outputs.logits  # shape: [1, T, vocab]
+
+        # Compute logprobs of next-token prediction
+        # Shift logits & labels by 1 position
+        shift_logits = logits[:, :-1, :]         # [1, T-1, vocab]
+        shift_labels = input_ids[:, 1:]          # [1, T-1]
+
+        # log softmax
+        logprobs = torch.log_softmax(shift_logits, dim=-1)
+
+        # Gather logprob of the true next-token for each position
+        token_logprobs = logprobs.gather(
+            dim=-1,
+            index=shift_labels.unsqueeze(-1)
+        ).squeeze(-1)  # shape: [1, T-1]
+
+        token_logprobs = token_logprobs.squeeze(0)  # [T-1]
+
+        out = {
+            "logprobs": token_logprobs.detach().cpu().tolist(),
+            "mean_logprob": float(token_logprobs.mean().item())
+        }
+        return out
