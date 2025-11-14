@@ -231,33 +231,66 @@ class BaseModel(ABC):
     @torch.no_grad()
     def score(self, text: str) -> Dict[str, Any]:
         """
-        Compute per-token logprobs for a given sentence.
-        Extended version for SyntaxGym:
-            - returns tokens
-            - returns input_ids
-            - returns per-token logprobs
+        Compute per-token logprobs and character offsets.
+        Returns:
+            {
+                "input_ids": [...],
+                "tokens": [...],
+                "offsets": [(start,end), ...],   # char span for EACH token
+                "logprobs": [...],
+                "mean_logprob": float
+            }
         """
-        # Tokenize
+
+        # -----------------------------------------------------
+        # 1. Tokenize WITHOUT add_special_tokens
+        # -----------------------------------------------------
         enc = self.tokenizer(
             text,
-            return_tensors="pt",
             add_special_tokens=False,
-            return_offsets_mapping=True  # for aligning regions in future
+            return_tensors="pt"
         ).to(self.device)
 
-        input_ids = enc["input_ids"]          # [1, T]
+        input_ids = enc["input_ids"]  # [1, T]
         attention_mask = enc.get("attention_mask", None)
-        offsets = enc["offset_mapping"][0]    # list of (start, end)
 
-        # forward (with ablation hooks)
+        # convert ids → tokens
+        tokens = self.tokenizer.convert_ids_to_tokens(
+            input_ids[0].tolist()
+        )
+
+        # -----------------------------------------------------
+        # 2. Compute offsets manually (because LLaMA is NOT fast tokenizer)
+        # -----------------------------------------------------
+        offsets = []
+        pos = 0
+        for tok in tokens:
+            # remove special token prefix
+            clean_tok = tok.replace("▁", "")     # LLaMA sentencepiece marker
+            clean_tok = clean_tok.lstrip()       # safety
+
+            # find match in original text
+            start = text.find(clean_tok, pos)
+            if start == -1:
+                start = pos
+            end = start + len(clean_tok)
+            offsets.append((start, end))
+
+            pos = end
+
+        # -----------------------------------------------------
+        # 3. Forward pass with ablation mask
+        # -----------------------------------------------------
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask
         )
 
-        logits = outputs.logits               # [1, T, vocab]
+        logits = outputs.logits  # [1, T, vocab]
 
-        # next-token log-prob
+        # -----------------------------------------------------
+        # 4. Next-token log-prob
+        # -----------------------------------------------------
         shift_logits = logits[:, :-1, :]
         shift_labels = input_ids[:, 1:]
 
@@ -266,12 +299,7 @@ class BaseModel(ABC):
         token_logprobs = logprobs.gather(
             dim=-1,
             index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1).squeeze(0)              # [T-1]
-
-        # decode tokens (for SyntaxGym region-span alignment)
-        tokens = self.tokenizer.convert_ids_to_tokens(
-            input_ids[0].tolist()
-        )
+        ).squeeze(-1).squeeze(0)   # [T-1]
 
         return {
             "input_ids": input_ids[0].tolist(),
@@ -280,4 +308,5 @@ class BaseModel(ABC):
             "logprobs": token_logprobs.cpu().tolist(),
             "mean_logprob": float(token_logprobs.mean().item())
         }
+
 
