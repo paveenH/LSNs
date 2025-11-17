@@ -56,11 +56,9 @@ def compute_region_surprisals(ex, model):
         # 1) Normalize region_info into list-of-dicts
         # ---------------------------------------------
         if isinstance(region_info, dict):
-            # Format B: {"region_number": [...], "content": [...]}
             region_numbers = [int(x) for x in region_info["region_number"]]
             region_texts   = [str(x) for x in region_info["content"]]
         else:
-            # Format A: [{"region_number": x, "content": y}, ...]
             region_numbers = [int(r["region_number"]) for r in region_info]
             region_texts   = [str(r["content"]) for r in region_info]
 
@@ -75,11 +73,10 @@ def compute_region_surprisals(ex, model):
             continue
 
         logprobs = out["logprobs"]       # length T-1
-        # offsets   = out["offsets"]      # not used anymore (tokenizer-based)
 
-        # Tokenize sentence for token alignment
+        # Tokenize sentence for alignment
         enc = tokenizer(sentence, return_offsets_mapping=True, add_special_tokens=False)
-        sent_tokens  = enc.tokens
+        sent_tokens  = enc.tokens()             # FIX: use tokens()
         sent_offsets = enc.offset_mapping
 
         # ---------------------------------------------
@@ -88,12 +85,13 @@ def compute_region_surprisals(ex, model):
         region_token_spans = []
 
         for chunk in region_texts:
-
             reg_enc = tokenizer(chunk, add_special_tokens=False)
-            region_tokens = reg_enc.tokens
-            L = len(region_tokens)
+            region_tokens = reg_enc.tokens()    # FIX: use tokens()
 
+            L = len(region_tokens)
             found = False
+
+            # match subsequence
             for start in range(len(sent_tokens) - L + 1):
                 if sent_tokens[start:start+L] == region_tokens:
                     region_token_spans.append((start, start+L))
@@ -101,7 +99,6 @@ def compute_region_surprisals(ex, model):
                     break
 
             if not found:
-                # Cannot find region tokens in sentence token stream
                 region_token_spans.append(None)
 
         # ---------------------------------------------
@@ -124,7 +121,6 @@ def compute_region_surprisals(ex, model):
         S[cond_name] = cond_S
 
     return S
-
 
 # ============================================================
 # Prediction evaluation
