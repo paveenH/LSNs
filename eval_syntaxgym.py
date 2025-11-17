@@ -32,88 +32,90 @@ def load_mask(model, size, pct, pooling, method):
 # ============================================================
 def compute_region_surprisals(ex, model):
     """
-    For one SyntaxGym item:
-        - For each condition, compute surprisal per region_number.
-        - Surprisal(region k) = sum_{tokens in region k} -log p(token_t | prefix).
-
-    Returns:
-        S: dict
-            cond_name -> { region_number(int): surprisal(float) }
+    Compute region-level surprisals using token-level alignment.
+    This is the CORRECT way to evaluate SyntaxGym tasks.
     """
+
+    tokenizer = model.tokenizer
+
     cond_names = ex["conditions"]["condition_name"]
     regions_per_cond = ex["conditions"]["regions"]       # list over conditions
-    contents_per_cond = ex["conditions"]["content"]      # full sentences per cond
+    contents_per_cond = ex["conditions"]["content"]      # full sentences per condition
 
-    S = {}  # cond_name -> {region_number: surprisal(float)}
+    S = {}  # cond_name -> {region_number: surprisal}
 
     for cond_idx, cond_name in enumerate(cond_names):
         sentence = contents_per_cond[cond_idx]
         region_info = regions_per_cond[cond_idx]
 
-        region_texts = []
-        region_numbers = []
+        # ---------------------------------------------
+        # 1) Parse region texts and region numbers
+        # ---------------------------------------------
+        region_texts = [str(r["content"]) for r in region_info]
+        region_numbers = [int(r["region_number"]) for r in region_info]
 
-        for r in region_info:
-            region_texts.append(str(r["content"]))
-            region_numbers.append(int(r["region_number"]))
-
-        # --------------------------------------------------
-        # 1) Compute char-span for each region (in sentence)
-        #    region_spans[i] = (start_char, end_char) for region i
-        # --------------------------------------------------
-        region_spans = []
-        pos = 0
-        for chunk in region_texts:
-            chunk = str(chunk)
-            start = sentence.find(chunk, pos)
-            if start == -1:
-                # Fallback: try from beginning; if still -1, approximate with pos
-                start = sentence.find(chunk)
-                if start == -1:
-                    start = pos
-            end = start + len(chunk)
-            region_spans.append((start, end))
-            # move pos to end to avoid matching earlier occurrences
-            pos = end
-
-        # --------------------------------------------------
-        # 2) Get token-level logprobs & offsets from model
-        # --------------------------------------------------
+        # ---------------------------------------------
+        # 2) Tokenize the full sentence
+        # ---------------------------------------------
         try:
-            out = model.score(sentence)
+            score_out = model.score(sentence)
         except Exception as e:
             print(f"[!] score() failed on sentence: {sentence}")
             print("    Error:", e)
-            # skip this condition (very rare)
             continue
 
-        logprobs = out["logprobs"]   # length T-1
-        offsets = out["offsets"]     # length T (one span per token)
+        logprobs = score_out["logprobs"]    # length T-1
+        offsets = score_out["offsets"]      # length T (token spans: (start,end))
 
-        # --------------------------------------------------
-        # 3) Aggregate surprisal per region
-        # --------------------------------------------------
-        # initialize region surprisal dict
-        cond_S = {int(r): 0.0 for r in region_numbers}
+        # Tokenize using the same tokenizer (for matching)
+        enc = tokenizer(sentence, return_offsets_mapping=True, add_special_tokens=False)
+        sent_tokens = enc.tokens
+        sent_offsets = enc.offset_mapping
 
-        for tok_idx, (t_start, t_end) in enumerate(offsets):
-            # some tokenizers may produce empty spans
-            if t_start == t_end:
-                continue
+        # ---------------------------------------------
+        # 3) Tokenize each region and match its token span
+        # ---------------------------------------------
+        region_token_spans = []  # [(start_idx, end_idx), ...]
 
-            # token 0 has no next-token logprob (we use next-token prediction)
-            if tok_idx == 0 or (tok_idx - 1) >= len(logprobs):
-                continue
+        for chunk in region_texts:
+            # tokenize region
+            reg_enc = tokenizer(chunk, add_special_tokens=False)
+            region_tokens = reg_enc.tokens
 
-            lp = logprobs[tok_idx - 1]
-            surpr = -float(lp)  # surprisal = -log p(token_t | prefix)
+            # --- find region token sequence inside sentence token sequence ---
+            L = len(region_tokens)
+            match_found = False
 
-            # assign this token to the first region whose span fully covers it
-            for r_idx, (r_start, r_end) in enumerate(region_spans):
-                if t_start >= r_start and t_end <= r_end:
-                    region_id = int(region_numbers[r_idx])
-                    cond_S[region_id] += surpr
+            for start in range(len(sent_tokens) - L + 1):
+                if sent_tokens[start:start+L] == region_tokens:
+                    region_token_spans.append((start, start + L))
+                    match_found = True
                     break
+
+            if not match_found:
+                # No exact token match found; this sometimes happens (e.g. punctuation).
+                # We allow a "no-region" slot (it will receive 0 surprisal).
+                region_token_spans.append(None)
+
+        # ---------------------------------------------
+        # 4) Aggregate surprisal per region
+        # ---------------------------------------------
+        cond_S = {r: 0.0 for r in region_numbers}
+
+        for ridx, tok_span in enumerate(region_token_spans):
+            if tok_span is None:
+                continue
+
+            region_id = region_numbers[ridx]
+            start_tok, end_tok = tok_span
+
+            # accumulate next-token surprisals for all tokens in region
+            # token t uses logprobs[t-1]
+            for t in range(start_tok, end_tok):
+                if t == 0 or (t - 1) >= len(logprobs):
+                    continue
+                surpr = -float(logprobs[t - 1])
+                cond_S[region_id] += surpr
 
         S[cond_name] = cond_S
 
