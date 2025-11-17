@@ -32,90 +32,94 @@ def load_mask(model, size, pct, pooling, method):
 # ============================================================
 def compute_region_surprisals(ex, model):
     """
-    Compute region-level surprisals using token-level alignment.
-    This is the CORRECT way to evaluate SyntaxGym tasks.
+    Fully correct SyntaxGym region-level surprisal computation.
+    Handles BOTH region formats:
+        (A) list-of-dicts
+        (B) dict-of-lists
+    Uses token-level alignment, not substring matching.
     """
 
     tokenizer = model.tokenizer
 
     cond_names = ex["conditions"]["condition_name"]
-    regions_per_cond = ex["conditions"]["regions"]       # list over conditions
-    contents_per_cond = ex["conditions"]["content"]      # full sentences per condition
+    regions_per_cond = ex["conditions"]["regions"]
+    contents_per_cond = ex["conditions"]["content"]
 
-    S = {}  # cond_name -> {region_number: surprisal}
+    S = {}
 
     for cond_idx, cond_name in enumerate(cond_names):
+
         sentence = contents_per_cond[cond_idx]
         region_info = regions_per_cond[cond_idx]
 
         # ---------------------------------------------
-        # 1) Parse region texts and region numbers
+        # 1) Normalize region_info into list-of-dicts
         # ---------------------------------------------
-        region_texts = [str(r["content"]) for r in region_info]
-        region_numbers = [int(r["region_number"]) for r in region_info]
+        if isinstance(region_info, dict):
+            # Format B: {"region_number": [...], "content": [...]}
+            region_numbers = [int(x) for x in region_info["region_number"]]
+            region_texts   = [str(x) for x in region_info["content"]]
+        else:
+            # Format A: [{"region_number": x, "content": y}, ...]
+            region_numbers = [int(r["region_number"]) for r in region_info]
+            region_texts   = [str(r["content"]) for r in region_info]
 
         # ---------------------------------------------
-        # 2) Tokenize the full sentence
+        # 2) Compute model logprobs
         # ---------------------------------------------
         try:
-            score_out = model.score(sentence)
+            out = model.score(sentence)
         except Exception as e:
             print(f"[!] score() failed on sentence: {sentence}")
             print("    Error:", e)
             continue
 
-        logprobs = score_out["logprobs"]    # length T-1
-        offsets = score_out["offsets"]      # length T (token spans: (start,end))
+        logprobs = out["logprobs"]       # length T-1
+        # offsets   = out["offsets"]      # not used anymore (tokenizer-based)
 
-        # Tokenize using the same tokenizer (for matching)
+        # Tokenize sentence for token alignment
         enc = tokenizer(sentence, return_offsets_mapping=True, add_special_tokens=False)
-        sent_tokens = enc.tokens
+        sent_tokens  = enc.tokens
         sent_offsets = enc.offset_mapping
 
         # ---------------------------------------------
-        # 3) Tokenize each region and match its token span
+        # 3) Token-level region matching
         # ---------------------------------------------
-        region_token_spans = []  # [(start_idx, end_idx), ...]
+        region_token_spans = []
 
         for chunk in region_texts:
-            # tokenize region
+
             reg_enc = tokenizer(chunk, add_special_tokens=False)
             region_tokens = reg_enc.tokens
-
-            # --- find region token sequence inside sentence token sequence ---
             L = len(region_tokens)
-            match_found = False
 
+            found = False
             for start in range(len(sent_tokens) - L + 1):
                 if sent_tokens[start:start+L] == region_tokens:
-                    region_token_spans.append((start, start + L))
-                    match_found = True
+                    region_token_spans.append((start, start+L))
+                    found = True
                     break
 
-            if not match_found:
-                # No exact token match found; this sometimes happens (e.g. punctuation).
-                # We allow a "no-region" slot (it will receive 0 surprisal).
+            if not found:
+                # Cannot find region tokens in sentence token stream
                 region_token_spans.append(None)
 
         # ---------------------------------------------
-        # 4) Aggregate surprisal per region
+        # 4) Sum surprisal per region
         # ---------------------------------------------
         cond_S = {r: 0.0 for r in region_numbers}
 
-        for ridx, tok_span in enumerate(region_token_spans):
-            if tok_span is None:
+        for ridx, span in enumerate(region_token_spans):
+            if span is None:
                 continue
 
             region_id = region_numbers[ridx]
-            start_tok, end_tok = tok_span
+            start_tok, end_tok = span
 
-            # accumulate next-token surprisals for all tokens in region
-            # token t uses logprobs[t-1]
             for t in range(start_tok, end_tok):
                 if t == 0 or (t - 1) >= len(logprobs):
                     continue
-                surpr = -float(logprobs[t - 1])
-                cond_S[region_id] += surpr
+                cond_S[region_id] += -float(logprobs[t - 1])
 
         S[cond_name] = cond_S
 
