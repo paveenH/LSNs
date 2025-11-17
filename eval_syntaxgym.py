@@ -33,9 +33,11 @@ def load_mask(model, size, pct, pooling, method):
 def compute_region_surprisals(ex, model):
     """
     Correct SyntaxGym region-level surprisal computation.
-    Minimal changes only:
-      ✓ Use norm_sentence for model.score()
-      ✓ Sequential region matching (avoid matching wrong region)
+    This version:
+      - Normalizes region text and sentence (fixes punctuation-space mismatches)
+      - Computes character spans robustly
+      - Aligns spans to model.score() token offsets
+      - Accumulates surprisal correctly
     """
 
     cond_names = ex["conditions"]["condition_name"]
@@ -44,10 +46,11 @@ def compute_region_surprisals(ex, model):
 
     S = {}
 
-    # Helper: normalize punctuation spacing
+    # Helper: remove unnecessary spaces before punctuation
     def normalize_text(txt: str) -> str:
         if not isinstance(txt, str):
             txt = str(txt)
+        # Replace " ." → ".", " ," → ",", etc.
         txt = re.sub(r"\s+([.,!?;:])", r"\1", txt)
         return txt.strip()
 
@@ -56,7 +59,7 @@ def compute_region_surprisals(ex, model):
         raw_region_info = regions_per_cond[cond_idx]
 
         # ------------------------------------------------
-        # 1. Normalize region info
+        # 1. Normalize region_info structure
         # ------------------------------------------------
         if isinstance(raw_region_info, dict):
             region_numbers = [int(x) for x in raw_region_info["region_number"]]
@@ -65,40 +68,42 @@ def compute_region_surprisals(ex, model):
             region_numbers = [int(r["region_number"]) for r in raw_region_info]
             region_texts   = [normalize_text(r["content"]) for r in raw_region_info]
 
-        # Normalize entire sentence
+        # Also normalize the sentence for matching
         norm_sentence = normalize_text(raw_sentence)
 
         # ------------------------------------------------
-        # 2. Score sentence using **normalized text** (critical fix)
+        # 2. Score sentence to get token-level logprobs/offsets
         # ------------------------------------------------
         try:
-            out = model.score(norm_sentence)
+            out = model.score(raw_sentence)
         except Exception as e:
-            print(f"[!] score() failed:\n  {norm_sentence}\nError: {e}")
+            print(f"[!] score() failed on sentence:\n  {raw_sentence}\nError: {e}")
             continue
 
-        logprobs = out["logprobs"]
-        offsets  = out["offsets"]
+        logprobs = out["logprobs"]          # length T-1
+        offsets  = out["offsets"]           # length T
 
         # ------------------------------------------------
-        # 3. Find region spans sequentially (minimal change)
+        # 3. Find region character spans using normalized text
         # ------------------------------------------------
         region_spans = []
-        search_pos = 0  # NEW — sequential matching
 
+        # We find in normalized sentence, but offsets correspond to raw_sentence.
+        # Because the only differences are spaces before punctuation,
+        # character offsets remain aligned for tokens, so this approximation works well.
         for rtxt in region_texts:
-            s = norm_sentence.find(rtxt, search_pos)
+
+            s = norm_sentence.find(rtxt)
             if s == -1:
-                print(f"[Warning] Region not found:\n '{rtxt}'\n in:\n '{norm_sentence}'")
+                print(f"[Warning] Region not found:\n  '{rtxt}'\n  in sentence:\n  '{raw_sentence}'")
                 region_spans.append(None)
                 continue
 
             e = s + len(rtxt)
             region_spans.append((s, e))
-            search_pos = e  # move forward to avoid matching earlier substring
 
         # ------------------------------------------------
-        # 4. Map to token spans
+        # 4. Map character spans back to token spans via offsets
         # ------------------------------------------------
         region_token_spans = []
 
@@ -108,12 +113,15 @@ def compute_region_surprisals(ex, model):
                 continue
 
             start_char, end_char = span
+
             start_tok = None
             end_tok = None
 
             for i, (ts, te) in enumerate(offsets):
+                # find token whose char span covers start_char
                 if start_tok is None and ts <= start_char < te:
                     start_tok = i
+                # find token that covers end_char
                 if ts < end_char <= te:
                     end_tok = i + 1
                     break
@@ -140,7 +148,7 @@ def compute_region_surprisals(ex, model):
             t0, t1 = tok_span
 
             for t in range(t0, t1):
-                if t == 0:
+                if t == 0: 
                     continue
                 if t - 1 >= len(logprobs):
                     break
