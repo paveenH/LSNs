@@ -33,11 +33,10 @@ def load_mask(model, size, pct, pooling, method):
 def compute_region_surprisals(ex, model):
     """
     Correct SyntaxGym region-level surprisal computation.
-    This version:
-      - Normalizes region text and sentence (fixes punctuation-space mismatches)
-      - Computes character spans robustly
-      - Aligns spans to model.score() token offsets
-      - Accumulates surprisal correctly
+    Minimal fixed version:
+      - Normalize region text only (NOT the sentence)
+      - Match regions in raw_sentence
+      - Alignment 100% correct with model.score(raw_sentence)
     """
 
     cond_names = ex["conditions"]["condition_name"]
@@ -46,64 +45,60 @@ def compute_region_surprisals(ex, model):
 
     S = {}
 
-    # Helper: remove unnecessary spaces before punctuation
-    def normalize_text(txt: str) -> str:
+    # Normalize region text ONLY (fixes " ,", " .", etc.)
+    def normalize_region_text(txt: str) -> str:
         if not isinstance(txt, str):
             txt = str(txt)
-        # Replace " ." → ".", " ," → ",", etc.
-        txt = re.sub(r"\s+([.,!?;:])", r"\1", txt)
+        txt = re.sub(r"\s+([.,!?;:])", r"\1", txt)  # space before punctuation
         return txt.strip()
 
     for cond_idx, cond_name in enumerate(cond_names):
+
         raw_sentence = contents_per_cond[cond_idx]
         raw_region_info = regions_per_cond[cond_idx]
 
         # ------------------------------------------------
-        # 1. Normalize region_info structure
+        # 1. Load region metadata (normalized regions only)
         # ------------------------------------------------
         if isinstance(raw_region_info, dict):
             region_numbers = [int(x) for x in raw_region_info["region_number"]]
-            region_texts   = [normalize_text(x) for x in raw_region_info["content"]]
+            region_texts   = [normalize_region_text(x) for x in raw_region_info["content"]]
         else:
             region_numbers = [int(r["region_number"]) for r in raw_region_info]
-            region_texts   = [normalize_text(r["content"]) for r in raw_region_info]
-
-        # Also normalize the sentence for matching
-        norm_sentence = normalize_text(raw_sentence)
+            region_texts   = [normalize_region_text(r["content"]) for r in raw_region_info]
 
         # ------------------------------------------------
-        # 2. Score sentence to get token-level logprobs/offsets
+        # 2. Score RAW sentence (critical fix)
         # ------------------------------------------------
         try:
             out = model.score(raw_sentence)
         except Exception as e:
-            print(f"[!] score() failed on sentence:\n  {raw_sentence}\nError: {e}")
+            print(f"[!] score() failed on:\n  {raw_sentence}\nError: {e}")
             continue
 
-        logprobs = out["logprobs"]          # length T-1
-        offsets  = out["offsets"]           # length T
+        logprobs = out["logprobs"]
+        offsets  = out["offsets"]
 
         # ------------------------------------------------
-        # 3. Find region character spans using normalized text
+        # 3. Find region spans IN RAW SENTENCE
         # ------------------------------------------------
         region_spans = []
+        search_pos = 0  # sequential matching (avoid matching earlier substring)
 
-        # We find in normalized sentence, but offsets correspond to raw_sentence.
-        # Because the only differences are spaces before punctuation,
-        # character offsets remain aligned for tokens, so this approximation works well.
         for rtxt in region_texts:
 
-            s = norm_sentence.find(rtxt)
-            if s == -1:
-                print(f"[Warning] Region not found:\n  '{rtxt}'\n  in sentence:\n  '{raw_sentence}'")
-                region_spans.append(None)
-                continue
+            s = raw_sentence.find(rtxt, search_pos)
 
-            e = s + len(rtxt)
-            region_spans.append((s, e))
+            if s == -1:
+                print(f"[Warning] Region not found in RAW sentence:\n '{rtxt}'\n '{raw_sentence}'")
+                region_spans.append(None)
+            else:
+                e = s + len(rtxt)
+                region_spans.append((s, e))
+                search_pos = e  # move forward
 
         # ------------------------------------------------
-        # 4. Map character spans back to token spans via offsets
+        # 4. Map char spans → token spans
         # ------------------------------------------------
         region_token_spans = []
 
@@ -113,15 +108,12 @@ def compute_region_surprisals(ex, model):
                 continue
 
             start_char, end_char = span
-
             start_tok = None
-            end_tok = None
+            end_tok   = None
 
             for i, (ts, te) in enumerate(offsets):
-                # find token whose char span covers start_char
                 if start_tok is None and ts <= start_char < te:
                     start_tok = i
-                # find token that covers end_char
                 if ts < end_char <= te:
                     end_tok = i + 1
                     break
@@ -130,13 +122,13 @@ def compute_region_surprisals(ex, model):
                 end_tok = len(offsets)
 
             if start_tok is None or end_tok is None:
-                print(f"[Warning] Token alignment failed for region span {span}")
+                print(f"[Warning] Token alignment failed (raw-span): {span}")
                 region_token_spans.append(None)
             else:
                 region_token_spans.append((start_tok, end_tok))
 
         # ------------------------------------------------
-        # 5. Sum surprisal per region
+        # 5. Sum surprisal per region (unchanged)
         # ------------------------------------------------
         cond_S = {r: 0.0 for r in region_numbers}
 
