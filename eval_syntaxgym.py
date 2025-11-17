@@ -50,8 +50,12 @@ def compute_region_surprisals(ex, model):
         sentence = contents_per_cond[cond_idx]
         region_info = regions_per_cond[cond_idx]
 
-        region_texts = region_info["content"]            # e.g. ['The', 'painting', 'that', ...]
-        region_numbers = region_info["region_number"]    # e.g. [1, 2, 3, ..., N]
+        region_texts = []
+        region_numbers = []
+
+        for r in region_info:
+            region_texts.append(str(r["content"]))
+            region_numbers.append(int(r["region_number"]))
 
         # --------------------------------------------------
         # 1) Compute char-span for each region (in sentence)
