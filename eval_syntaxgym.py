@@ -32,13 +32,9 @@ def load_mask(model, size, pct, pooling, method):
 # ============================================================
 def compute_region_surprisals(ex, model):
     """
-    Fully correct SyntaxGym region-level surprisal computation.
-    Handles BOTH region formats:
-        (A) list-of-dicts
-        (B) dict-of-lists
-    Uses token-level alignment, not substring matching.
+    Corrected SyntaxGym region-level surprisal computation.
+    Uses character offset alignment for robust region matching.
     """
-
     tokenizer = model.tokenizer
 
     cond_names = ex["conditions"]["condition_name"]
@@ -48,62 +44,89 @@ def compute_region_surprisals(ex, model):
     S = {}
 
     for cond_idx, cond_name in enumerate(cond_names):
-
         sentence = contents_per_cond[cond_idx]
         region_info = regions_per_cond[cond_idx]
 
-        # ---------------------------------------------
+        # ------------------------------------------------
         # 1) Normalize region_info into list-of-dicts
-        # ---------------------------------------------
+        # ------------------------------------------------
         if isinstance(region_info, dict):
             region_numbers = [int(x) for x in region_info["region_number"]]
-            region_texts   = [str(x) for x in region_info["content"]]
+            region_texts = [str(x) for x in region_info["content"]]
         else:
             region_numbers = [int(r["region_number"]) for r in region_info]
-            region_texts   = [str(r["content"]) for r in region_info]
+            region_texts = [str(r["content"]) for r in region_info]
 
-        # ---------------------------------------------
+        # ------------------------------------------------
         # 2) Compute model logprobs
-        # ---------------------------------------------
+        # ------------------------------------------------
         try:
             out = model.score(sentence)
         except Exception as e:
             print(f"[!] score() failed on sentence: {sentence}")
-            print("    Error:", e)
+            print(f"    Error: {e}")
             continue
 
-        logprobs = out["logprobs"]       # length T-1
+        # Assume logprobs[i] = -log P(token_{i+1} | prefix)
+        # So logprobs has length (num_tokens - 1)
+        logprobs = out["logprobs"]
 
-        # Tokenize sentence for alignment
+        # ------------------------------------------------
+        # 3) Tokenize sentence with offsets
+        # ------------------------------------------------
         enc = tokenizer(sentence, return_offsets_mapping=True, add_special_tokens=False)
-        sent_tokens  = enc.tokens()             # FIX: use tokens()
+        
+        # Get tokens (compatible with both Fast and standard tokenizers)
+        if hasattr(enc, 'tokens'):
+            sent_tokens = enc.tokens()
+        else:
+            sent_tokens = tokenizer.convert_ids_to_tokens(enc.input_ids)
+        
         sent_offsets = enc.offset_mapping
 
-        # ---------------------------------------------
-        # 3) Token-level region matching
-        # ---------------------------------------------
+        # ------------------------------------------------
+        # 4) Character-based region alignment
+        # ------------------------------------------------
         region_token_spans = []
 
         for chunk in region_texts:
-            reg_enc = tokenizer(chunk, add_special_tokens=False)
-            region_tokens = reg_enc.tokens()    # FIX: use tokens()
-
-            L = len(region_tokens)
-            found = False
-
-            # match subsequence
-            for start in range(len(sent_tokens) - L + 1):
-                if sent_tokens[start:start+L] == region_tokens:
-                    region_token_spans.append((start, start+L))
-                    found = True
-                    break
-
-            if not found:
+            # Find character position in sentence
+            start_char = sentence.find(chunk)
+            
+            if start_char == -1:
+                print(f"[Warning] Region '{chunk}' not found in: '{sentence}'")
                 region_token_spans.append(None)
+                continue
+            
+            end_char = start_char + len(chunk)
+            
+            # Map character range to token indices
+            start_tok = None
+            end_tok = None
+            
+            for i, (tok_start, tok_end) in enumerate(sent_offsets):
+                # Token that starts at or before region start
+                if start_tok is None and tok_start <= start_char < tok_end:
+                    start_tok = i
+                
+                # Token that ends at or after region end
+                if tok_start < end_char <= tok_end:
+                    end_tok = i + 1
+                    break
+            
+            # Handle edge case: region extends to end of sentence
+            if start_tok is not None and end_tok is None:
+                end_tok = len(sent_tokens)
+            
+            if start_tok is None or end_tok is None:
+                print(f"[Warning] Failed to align region '{chunk}' (chars {start_char}-{end_char})")
+                region_token_spans.append(None)
+            else:
+                region_token_spans.append((start_tok, end_tok))
 
-        # ---------------------------------------------
-        # 4) Sum surprisal per region
-        # ---------------------------------------------
+        # ------------------------------------------------
+        # 5) Sum surprisal per region
+        # ------------------------------------------------
         cond_S = {r: 0.0 for r in region_numbers}
 
         for ridx, span in enumerate(region_token_spans):
@@ -113,9 +136,18 @@ def compute_region_surprisals(ex, model):
             region_id = region_numbers[ridx]
             start_tok, end_tok = span
 
+            # Accumulate surprisal for tokens in this region
+            # logprobs[i] corresponds to the surprisal of token i+1
+            # So for token at position t, use logprobs[t-1]
             for t in range(start_tok, end_tok):
-                if t == 0 or (t - 1) >= len(logprobs):
+                if t == 0:
+                    # First token has no preceding context, skip
                     continue
+                if t - 1 >= len(logprobs):
+                    # Out of bounds check
+                    break
+                
+                # Add negative log probability (surprisal)
                 cond_S[region_id] += -float(logprobs[t - 1])
 
         S[cond_name] = cond_S
