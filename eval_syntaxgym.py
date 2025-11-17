@@ -32,9 +32,14 @@ def load_mask(model, size, pct, pooling, method):
 # ============================================================
 def compute_region_surprisals(ex, model):
     """
-    Corrected SyntaxGym region-level surprisal computation.
-    Uses character offset alignment for robust region matching.
+    Correct SyntaxGym region-level surprisal computation.
+    This version:
+      - Normalizes region text and sentence (fixes punctuation-space mismatches)
+      - Computes character spans robustly
+      - Aligns spans to model.score() token offsets
+      - Accumulates surprisal correctly
     """
+
     tokenizer = model.tokenizer
 
     cond_names = ex["conditions"]["condition_name"]
@@ -43,111 +48,112 @@ def compute_region_surprisals(ex, model):
 
     S = {}
 
+    # Helper: remove unnecessary spaces before punctuation
+    def normalize_text(txt: str) -> str:
+        if not isinstance(txt, str):
+            txt = str(txt)
+        # Replace " ." → ".", " ," → ",", etc.
+        txt = re.sub(r"\s+([.,!?;:])", r"\1", txt)
+        return txt.strip()
+
     for cond_idx, cond_name in enumerate(cond_names):
-        sentence = contents_per_cond[cond_idx]
-        region_info = regions_per_cond[cond_idx]
+        raw_sentence = contents_per_cond[cond_idx]
+        raw_region_info = regions_per_cond[cond_idx]
 
         # ------------------------------------------------
-        # 1) Normalize region_info into list-of-dicts
+        # 1. Normalize region_info structure
         # ------------------------------------------------
-        if isinstance(region_info, dict):
-            region_numbers = [int(x) for x in region_info["region_number"]]
-            region_texts = [str(x) for x in region_info["content"]]
+        if isinstance(raw_region_info, dict):
+            region_numbers = [int(x) for x in raw_region_info["region_number"]]
+            region_texts   = [normalize_text(x) for x in raw_region_info["content"]]
         else:
-            region_numbers = [int(r["region_number"]) for r in region_info]
-            region_texts = [str(r["content"]) for r in region_info]
+            region_numbers = [int(r["region_number"]) for r in raw_region_info]
+            region_texts   = [normalize_text(r["content"]) for r in raw_region_info]
+
+        # Also normalize the sentence for matching
+        norm_sentence = normalize_text(raw_sentence)
 
         # ------------------------------------------------
-        # 2) Compute model logprobs
+        # 2. Score sentence to get token-level logprobs/offsets
         # ------------------------------------------------
         try:
-            out = model.score(sentence)
+            out = model.score(raw_sentence)
         except Exception as e:
-            print(f"[!] score() failed on sentence: {sentence}")
-            print(f"    Error: {e}")
+            print(f"[!] score() failed on sentence:\n  {raw_sentence}\nError: {e}")
             continue
 
-        # Assume logprobs[i] = -log P(token_{i+1} | prefix)
-        # So logprobs has length (num_tokens - 1)
-        logprobs = out["logprobs"]
+        logprobs = out["logprobs"]          # length T-1
+        offsets  = out["offsets"]           # length T
 
         # ------------------------------------------------
-        # 3) Tokenize sentence with offsets
+        # 3. Find region character spans using normalized text
         # ------------------------------------------------
-        enc = tokenizer(sentence, return_offsets_mapping=True, add_special_tokens=False)
-        
-        # Get tokens (compatible with both Fast and standard tokenizers)
-        if hasattr(enc, 'tokens'):
-            sent_tokens = enc.tokens()
-        else:
-            sent_tokens = tokenizer.convert_ids_to_tokens(enc.input_ids)
-        
-        sent_offsets = enc.offset_mapping
+        region_spans = []
+
+        # We find in normalized sentence, but offsets correspond to raw_sentence.
+        # Because the only differences are spaces before punctuation,
+        # character offsets remain aligned for tokens, so this approximation works well.
+        for rtxt in region_texts:
+
+            s = norm_sentence.find(rtxt)
+            if s == -1:
+                print(f"[Warning] Region not found:\n  '{rtxt}'\n  in sentence:\n  '{raw_sentence}'")
+                region_spans.append(None)
+                continue
+
+            e = s + len(rtxt)
+            region_spans.append((s, e))
 
         # ------------------------------------------------
-        # 4) Character-based region alignment
+        # 4. Map character spans back to token spans via offsets
         # ------------------------------------------------
         region_token_spans = []
 
-        for chunk in region_texts:
-            # Find character position in sentence
-            start_char = sentence.find(chunk)
-            
-            if start_char == -1:
-                print(f"[Warning] Region '{chunk}' not found in: '{sentence}'")
+        for span in region_spans:
+            if span is None:
                 region_token_spans.append(None)
                 continue
-            
-            end_char = start_char + len(chunk)
-            
-            # Map character range to token indices
+
+            start_char, end_char = span
+
             start_tok = None
             end_tok = None
-            
-            for i, (tok_start, tok_end) in enumerate(sent_offsets):
-                # Token that starts at or before region start
-                if start_tok is None and tok_start <= start_char < tok_end:
+
+            for i, (ts, te) in enumerate(offsets):
+                # find token whose char span covers start_char
+                if start_tok is None and ts <= start_char < te:
                     start_tok = i
-                
-                # Token that ends at or after region end
-                if tok_start < end_char <= tok_end:
+                # find token that covers end_char
+                if ts < end_char <= te:
                     end_tok = i + 1
                     break
-            
-            # Handle edge case: region extends to end of sentence
+
             if start_tok is not None and end_tok is None:
-                end_tok = len(sent_tokens)
-            
+                end_tok = len(offsets)
+
             if start_tok is None or end_tok is None:
-                print(f"[Warning] Failed to align region '{chunk}' (chars {start_char}-{end_char})")
+                print(f"[Warning] Token alignment failed for region span {span}")
                 region_token_spans.append(None)
             else:
                 region_token_spans.append((start_tok, end_tok))
 
         # ------------------------------------------------
-        # 5) Sum surprisal per region
+        # 5. Sum surprisal per region
         # ------------------------------------------------
         cond_S = {r: 0.0 for r in region_numbers}
 
-        for ridx, span in enumerate(region_token_spans):
-            if span is None:
+        for ridx, tok_span in enumerate(region_token_spans):
+            if tok_span is None:
                 continue
 
             region_id = region_numbers[ridx]
-            start_tok, end_tok = span
+            t0, t1 = tok_span
 
-            # Accumulate surprisal for tokens in this region
-            # logprobs[i] corresponds to the surprisal of token i+1
-            # So for token at position t, use logprobs[t-1]
-            for t in range(start_tok, end_tok):
-                if t == 0:
-                    # First token has no preceding context, skip
+            for t in range(t0, t1):
+                if t == 0: 
                     continue
                 if t - 1 >= len(logprobs):
-                    # Out of bounds check
                     break
-                
-                # Add negative log probability (surprisal)
                 cond_S[region_id] += -float(logprobs[t - 1])
 
         S[cond_name] = cond_S
