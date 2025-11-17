@@ -108,6 +108,10 @@ def compute_region_surprisals(ex, model):
                 continue
 
             start_char, end_char = span
+            if start_char == end_char:
+                region_token_spans.append(None)
+                continue
+
             start_tok = None
             end_tok   = None
 
@@ -126,7 +130,7 @@ def compute_region_surprisals(ex, model):
                 region_token_spans.append(None)
             else:
                 region_token_spans.append((start_tok, end_tok))
-
+    
         # ------------------------------------------------
         # 5. Sum surprisal per region (unchanged)
         # ------------------------------------------------
