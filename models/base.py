@@ -308,5 +308,59 @@ class BaseModel(ABC):
             "logprobs": token_logprobs.cpu().tolist(),
             "mean_logprob": float(token_logprobs.mean().item())
         }
+    
+    
+    # =========================================================
+    # Universal Zero-shot Classification APIs for GLUE tasks
+    # =========================================================
+    @torch.no_grad()
+    def _score_choice(self, prompt: str, choice: str) -> float:
+        """
+        Compute the total logprob of generating `choice` after `prompt`.
+        Uses model.score() so ablation hooks automatically apply.
+        """
+        full_text = prompt.strip() + " " + choice
+        out = self.score(full_text)
+        return sum(out["logprobs"])   # total logprob
+
+    @torch.no_grad()
+    def classify(self, text: str) -> int:
+        """
+        Zero-shot boolean classification using Yes/No.
+        Output: 1 for yes, 0 for no.
+        Works for CoLA / SST-2 style tasks.
+        """
+
+        # Default binary question prompt
+        prompt = f"""
+        Text: "{text}"
+        Is this true? Answer Yes or No.
+        """
+
+        s_yes = self._score_choice(prompt, "Yes")
+        s_no  = self._score_choice(prompt, "No")
+
+        return 1 if s_yes > s_no else 0
+
+    @torch.no_grad()
+    def classify_pair(self, text1: str, text2: str) -> int:
+        """
+        Zero-shot boolean classification for sentence-pair tasks.
+        Output: 1 for yes, 0 for no.
+        Works for RTE / MRPC / QQP / QNLI style tasks.
+        """
+        prompt = f"""
+        Sentence 1: "{text1}"
+        Sentence 2: "{text2}"
+        Do these sentences have the same meaning or logically entail each other?
+        Answer Yes or No.
+        """
+
+        s_yes = self._score_choice(prompt, "Yes")
+        s_no  = self._score_choice(prompt, "No")
+
+        return 1 if s_yes > s_no else 0
+
+
 
 
