@@ -5,3 +5,5 @@ pandas
 scipy>=1.7.0
 tqdm
 pyyaml
+datasets>=2.10.0
+accelerate>=0.20.0

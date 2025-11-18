@@ -102,7 +102,6 @@ class BaseModel(ABC):
         self.logger.info(f"Registered {len(self._ablation_hooks)} ablation hooks")
     
     
-    
     def _remove_ablation_hooks(self):
         """Remove any registered ablation hooks."""
         if getattr(self, "_ablation_hooks", None):
@@ -228,3 +227,140 @@ class BaseModel(ABC):
     def __str__(self) -> str:
         """String representation of the model."""
         return f"{self.__class__.__name__}(path={self.model_path}, layers={self.num_layers}, hidden={self.hidden_size})" 
+    
+    @torch.no_grad()
+    def score(self, text: str) -> Dict[str, Any]:
+        """
+        Compute per-token logprobs and character offsets.
+        Returns:
+            {
+                "input_ids": [...],
+                "tokens": [...],
+                "offsets": [(start,end), ...],   # char span for EACH token
+                "logprobs": [...],
+                "mean_logprob": float
+            }
+        """
+
+        # -----------------------------------------------------
+        # 1. Tokenize WITHOUT add_special_tokens
+        # -----------------------------------------------------
+        enc = self.tokenizer(
+            text,
+            add_special_tokens=False,
+            return_tensors="pt"
+        ).to(self.device)
+
+        input_ids = enc["input_ids"]  # [1, T]
+        attention_mask = enc.get("attention_mask", None)
+
+        # convert ids → tokens
+        tokens = self.tokenizer.convert_ids_to_tokens(
+            input_ids[0].tolist()
+        )
+
+        # -----------------------------------------------------
+        # 2. Compute offsets manually (because LLaMA is NOT fast tokenizer)
+        # -----------------------------------------------------
+        offsets = []
+        pos = 0
+        for tok in tokens:
+            # remove special token prefix
+            clean_tok = tok.replace("▁", "")     # LLaMA sentencepiece marker
+            clean_tok = clean_tok.lstrip()       # safety
+
+            # find match in original text
+            start = text.find(clean_tok, pos)
+            if start == -1:
+                start = pos
+            end = start + len(clean_tok)
+            offsets.append((start, end))
+
+            pos = end
+
+        # -----------------------------------------------------
+        # 3. Forward pass with ablation mask
+        # -----------------------------------------------------
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask
+        )
+
+        logits = outputs.logits  # [1, T, vocab]
+
+        # -----------------------------------------------------
+        # 4. Next-token log-prob
+        # -----------------------------------------------------
+        shift_logits = logits[:, :-1, :]
+        shift_labels = input_ids[:, 1:]
+
+        logprobs = torch.log_softmax(shift_logits, dim=-1)
+
+        token_logprobs = logprobs.gather(
+            dim=-1,
+            index=shift_labels.unsqueeze(-1)
+        ).squeeze(-1).squeeze(0)   # [T-1]
+
+        return {
+            "input_ids": input_ids[0].tolist(),
+            "tokens": tokens,
+            "offsets": [(int(a), int(b)) for a, b in offsets],
+            "logprobs": token_logprobs.cpu().tolist(),
+            "mean_logprob": float(token_logprobs.mean().item())
+        }
+    
+    
+    # =========================================================
+    # Universal Zero-shot Classification APIs for GLUE tasks
+    # =========================================================
+    @torch.no_grad()
+    def _score_choice(self, prompt: str, choice: str) -> float:
+        """
+        Compute the total logprob of generating `choice` after `prompt`.
+        Uses model.score() so ablation hooks automatically apply.
+        """
+        full_text = prompt.strip() + " " + choice
+        out = self.score(full_text)
+        return sum(out["logprobs"])   # total logprob
+
+    @torch.no_grad()
+    def classify(self, text: str) -> int:
+        """
+        Zero-shot boolean classification using Yes/No.
+        Output: 1 for yes, 0 for no.
+        Works for CoLA / SST-2 style tasks.
+        """
+
+        # Default binary question prompt
+        prompt = f"""
+        Text: "{text}"
+        Is this true? Answer Yes or No.
+        """
+
+        s_yes = self._score_choice(prompt, "Yes")
+        s_no  = self._score_choice(prompt, "No")
+
+        return 1 if s_yes > s_no else 0
+
+    @torch.no_grad()
+    def classify_pair(self, text1: str, text2: str) -> int:
+        """
+        Zero-shot boolean classification for sentence-pair tasks.
+        Output: 1 for yes, 0 for no.
+        Works for RTE / MRPC / QQP / QNLI style tasks.
+        """
+        prompt = f"""
+        Sentence 1: "{text1}"
+        Sentence 2: "{text2}"
+        Do these sentences have the same meaning or logically entail each other?
+        Answer Yes or No.
+        """
+
+        s_yes = self._score_choice(prompt, "Yes")
+        s_no  = self._score_choice(prompt, "No")
+
+        return 1 if s_yes > s_no else 0
+
+
+
+

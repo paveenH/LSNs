@@ -11,7 +11,7 @@ import torch
 import numpy as np
 import argparse
 from models.factory import ModelFactory
-from datasets import LangLocDataset, TOMLocDataset, MDLocDataset
+from datasets_loc import LangLocDataset, TOMLocDataset, MDLocDataset
 from analysis.ttest_analyzer import TTestAnalyzer
 from analysis.ttest_signed_analyzer import TTestSignedAnalyzer  
 from analysis.nmd_analyzer import NMDAnalyzer
@@ -69,12 +69,6 @@ def extract_data(model_name, network, pooling, batch_size):
 # STEP 2 — Run analyzers
 # ======================================================
 
-# Helper: filename builder
-def make_save_name(cache_dir, base_model: str, size: str, pct: float, pooling: str, method: str) -> str:
-    base = f"{base_model.lower()}_{size.upper()}_{str(pct)}pct_{pooling}"
-    return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
-
-
 def run_all_analyses(
         positive, negative, layer_names, percentage=5.0, 
         model_name="unknown", base_model="llama3", size="1B", pooling="last"
@@ -84,7 +78,16 @@ def run_all_analyses(
     cache_dir = "cache"
     os.makedirs(cache_dir, exist_ok=True)
 
+    # Helper: filename builder
+    def make_save_name(cache_dir, base_model, size, pct, pooling, method):
+        base = f"{base_model.lower()}_{size.upper()}_{pct}pct_{pooling}"
+        return os.path.join(cache_dir, f"{base}_{method}_mask.npy")
     
+    # Helper for saving pos/neg mean
+    def make_mean_name(cache_dir, base_model, size, pct, pooling, which):
+        base = f"{base_model.lower()}_{size.upper()}_{pct}pct_{pooling}"
+        return os.path.join(cache_dir, f"{base}_nmd_{which}.npy")
+
     # --- (a) Absolute-value T-test ---
     ttest_abs = TTestAnalyzer({"percentage": percentage, "localize_range": "100-100"})
     ttest_abs_mask, ttest_abs_meta = ttest_abs.analyze(positive, negative)
@@ -97,19 +100,36 @@ def run_all_analyses(
     nmd_analyzer = NMDAnalyzer({"topk_ratio": percentage / 100.0})
     nmd_mask, nmd_meta = nmd_analyzer.analyze(positive, negative)
 
-    # --- Save with pooling in name ---
+    # Extract raw means directly from metadata:
+    pos_mean = np.array(nmd_meta["positive_mean"])
+    neg_mean = np.array(nmd_meta["negative_mean"])
+
+    # --- Save masks ---
     np.save(make_save_name(cache_dir, base_model, size, percentage, pooling, "ttest_abs"), ttest_abs_mask)
     np.save(make_save_name(cache_dir, base_model, size, percentage, pooling, "ttest_signed"), ttest_signed_mask)
     np.save(make_save_name(cache_dir, base_model, size, percentage, pooling, "nmd"), nmd_mask)
 
-    print(f"Saved masks to {cache_dir}/ as:")
+    # --- Save NMD raw positive/negative mean activations ---
+    pos_path = make_mean_name(cache_dir, base_model, size, percentage, pooling, "pos_mean")
+    neg_path = make_mean_name(cache_dir, base_model, size, percentage, pooling, "neg_mean")
+
+    np.save(pos_path, pos_mean)
+    np.save(neg_path, neg_mean)
+
+    print(f"Saved masks to {cache_dir}/")
     print(f"  {base_model}_{size}_{percentage}pct_{pooling}_*_mask.npy")
+    print("Saved raw means:")
+    print(f"  {pos_path}")
+    print(f"  {neg_path}")
 
     return {
         "ttest_abs_mask": ttest_abs_mask,
         "ttest_signed_mask": ttest_signed_mask,
         "nmd_mask": nmd_mask,
         "layer_names": layer_names,
+        "nmd_pos_mean": pos_mean,
+        "nmd_neg_mean": neg_mean,
+        "nmd_meta": nmd_meta,
     }
 
 
