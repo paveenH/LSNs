@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import os
+if 'HF_HUB_ENABLE_HF_TRANSFER' not in os.environ:
+    os.environ['HF_HUB_ENABLE_HF_TRANSFER'] = '0'
+
 import numpy as np
 import torch
 from datasets import load_dataset
@@ -9,12 +12,39 @@ from models.factory import ModelFactory
 from collections import defaultdict
 
 def load_mask(model, size, pct, pooling, method):
-    fname = f"{model}_{size}_{pct}pct_{pooling}_{method}_mask.npy"
-    path = os.path.join("cache", fname)
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Mask not found: {path}")
-    print(f"Loaded mask: {path}")
-    return np.load(path)
+    import glob
+    
+    fname1 = f"{model}_{size}_{pct}pct_{pooling}_{method}_mask.npy"
+    path1 = os.path.join("cache", fname1)
+    
+    pooling_localize = "last-token" if pooling == "last" else pooling
+    model_id = f"Llama-3.1-8B-Instruct" if (model, size) == ("llama3", "8B") else f"{model}_{size}"
+    fname2_pattern = f"{model_id}_network=language_pooling={pooling_localize}_range=100-100_perc={pct}_nunits=*_pretrained=True.npy"
+    path2_pattern = os.path.join("cache", fname2_pattern)
+    
+    if os.path.exists(path1):
+        print(f"Loaded mask: {path1}")
+        return np.load(path1)
+    
+    matches = glob.glob(path2_pattern)
+    if matches:
+        path2 = matches[0]
+        print(f"Loaded mask: {path2}")
+        return np.load(path2)
+    
+    all_masks = glob.glob(os.path.join("cache", "*language*.npy"))
+    if all_masks:
+        print(f"Warning: Could not find exact mask match. Found {len(all_masks)} language masks.")
+        print(f"Available masks: {[os.path.basename(m) for m in all_masks[:5]]}")
+        print(f"Trying to use: {all_masks[0]}")
+        return np.load(all_masks[0])
+    
+    raise FileNotFoundError(
+        f"Mask not found. Tried:\n"
+        f"  - {path1}\n"
+        f"  - Pattern: {fname2_pattern}\n"
+        f"Run 'localize.py' first to create masks, or use --baseline flag for baseline evaluation only."
+    )
 
 
 from sklearn.metrics import accuracy_score, f1_score
@@ -239,7 +269,13 @@ def main():
     for method in args.method:
         print(f"\n=== Ablation: {method} ===")
 
-        mask = load_mask(args.model, args.size, args.pct, args.pooling, method)
+        try:
+            mask = load_mask(args.model, args.size, args.pct, args.pooling, method)
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}")
+            print("\nSkipping ablation evaluation for this method.")
+            continue
+            
         mask_tensor = torch.tensor(1.0 - mask, dtype=torch.float16, device=device)
         model.set_language_selective_mask(mask_tensor)
 
