@@ -36,7 +36,6 @@ cache/
 *.temp
 *.cache
 
-results/
 outputs/
 *.npy
 *.npz

@@ -361,6 +361,54 @@ class BaseModel(ABC):
 
         return 1 if s_yes > s_no else 0
 
+    @torch.no_grad()
+    def classify_three_way(self, text1: str, text2: str) -> int:
+        prompt = f"""
+        Premise: "{text1}"
+        Hypothesis: "{text2}"
+        Does the premise entail, contradict, or is neutral to the hypothesis?
+        Answer: entailment, neutral, or contradiction.
+        """
+
+        s_entailment = self._score_choice(prompt, "entailment")
+        s_neutral = self._score_choice(prompt, "neutral")
+        s_contradiction = self._score_choice(prompt, "contradiction")
+        
+        scores = [s_entailment, s_neutral, s_contradiction]
+        return scores.index(max(scores))
+
+    @torch.no_grad()
+    def choose_best_option(self, question: str, options: list) -> int:
+        option_labels = ["A", "B", "C", "D", "E"]
+        scores = []
+        
+        for i, option in enumerate(options):
+            label = option_labels[i] if i < len(option_labels) else str(i+1)
+            prompt = f"""
+            {question}
+            Option {label}: {option}
+            Is this the correct answer? Answer Yes or No.
+            """
+            s_yes = self._score_choice(prompt, "Yes")
+            scores.append(s_yes)
+        
+        return scores.index(max(scores))
+
+    @torch.no_grad()
+    def extract_answer(self, context: str, question: str) -> str:
+        prompt = f"""
+        Context: {context}
+        Question: {question}
+        Answer:
+        """
+        
+        answer = self.generate(prompt, max_new_tokens=10, do_sample=False)
+        
+        if answer.startswith(prompt.strip()):
+            answer = answer[len(prompt.strip()):].strip()
+        
+        return answer.strip()
+
 
 
 
